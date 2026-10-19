@@ -17,9 +17,10 @@ DEFAULT_NOTES = [
 
 
 def load_memory() -> Dict[str, Any]:
-    """Loads persistent athlete memory and messages from disk."""
+    """Loads persistent athlete memory, profile, and messages from disk."""
     if not MEMORY_FILE.exists():
         initial_data = {
+            "profile": {"ftp": 230, "weight_kg": 68.0},
             "athlete_notes": DEFAULT_NOTES.copy(),
             "messages": [],
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -29,6 +30,8 @@ def load_memory() -> Dict[str, Any]:
 
     try:
         data = json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
+        if "profile" not in data:
+            data["profile"] = {"ftp": 230, "weight_kg": 68.0}
         if "athlete_notes" not in data:
             data["athlete_notes"] = DEFAULT_NOTES.copy()
         if "messages" not in data:
@@ -37,10 +40,27 @@ def load_memory() -> Dict[str, Any]:
     except Exception as e:
         print(f"Error loading memory: {e}")
         return {
+            "profile": {"ftp": 230, "weight_kg": 68.0},
             "athlete_notes": DEFAULT_NOTES.copy(),
             "messages": [],
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+
+
+def get_athlete_profile() -> Dict[str, Any]:
+    """Retrieves saved athlete profile (FTP, Weight)."""
+    mem = load_memory()
+    return mem.get("profile", {"ftp": 230, "weight_kg": 68.0})
+
+
+def update_athlete_profile(ftp: int, weight_kg: float) -> None:
+    """Updates and saves athlete profile (FTP, Weight) to persistent storage."""
+    mem = load_memory()
+    mem["profile"] = {
+        "ftp": int(ftp),
+        "weight_kg": float(weight_kg),
+    }
+    save_memory(mem)
 
 
 def save_memory(data: Dict[str, Any]) -> None:

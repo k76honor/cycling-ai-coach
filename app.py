@@ -35,6 +35,8 @@ from memory_manager import (
     append_chat_message,
     clear_chat_history,
     auto_extract_athlete_insight,
+    get_athlete_profile,
+    update_athlete_profile,
 )
 
 # Page configuration
@@ -90,15 +92,25 @@ st.sidebar.title("🚴 사이클링 코치 설정")
 
 # Athlete Profile Section
 st.sidebar.subheader("👤 라이더 프로필")
+saved_profile = get_athlete_profile()
+init_ftp = int(saved_profile.get("ftp", DEFAULT_FTP))
+init_weight = float(saved_profile.get("weight_kg", DEFAULT_WEIGHT_KG))
+
 ftp_input = st.sidebar.number_input(
-    "기준 FTP (Watts)", min_value=100, max_value=500, value=DEFAULT_FTP, step=5,
+    "기준 FTP (Watts)", min_value=100, max_value=500, value=init_ftp, step=5,
     help="1시간 동안 지속할 수 있는 최대 평균 파워(FTP)"
 )
 weight_input = st.sidebar.number_input(
-    "체중 (kg)", min_value=40.0, max_value=130.0, value=DEFAULT_WEIGHT_KG, step=0.5
+    "체중 (kg)", min_value=40.0, max_value=130.0, value=init_weight, step=0.5
 )
+
+# Auto-save whenever user changes FTP or Weight
+if ftp_input != init_ftp or weight_input != init_weight:
+    update_athlete_profile(ftp=ftp_input, weight_kg=weight_input)
+
 w_per_kg = round(ftp_input / max(1.0, weight_input), 2)
 st.sidebar.caption(f"⚡ **체중당 파워 (W/kg)**: `{w_per_kg} W/kg`")
+st.sidebar.caption("💾 *설정하신 FTP와 체중은 자동 저장되어 다음 접속 시에도 유지됩니다.*")
 
 st.sidebar.divider()
 

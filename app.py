@@ -71,6 +71,15 @@ st.markdown(
         font-size: 1.1rem;
         font-weight: 600;
     }
+    /* 채팅 입력창이 항상 화면 아래쪽에 고정되도록 스타일링 */
+    div[data-testid="stChatInput"] {
+        position: sticky !important;
+        bottom: 12px !important;
+        z-index: 999 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.3) !important;
+        background-color: #0f172a !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -448,12 +457,14 @@ with tab3:
             st.session_state["messages"] = [default_greeting]
             append_chat_message(default_greeting["role"], default_greeting["content"])
 
-    # Display chat history
-    for msg in st.session_state["messages"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    # Display chat history inside a fixed-height scrollable container
+    chat_container = st.container(height=520)
+    with chat_container:
+        for msg in st.session_state["messages"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-    # Handle input (from text input or quick prompt button)
+    # Handle input (Always fixed & docked right at the bottom of the screen)
     user_input = st.chat_input("코치에게 훈련 상담 질문을 입력하세요...")
     query = quick_prompt or user_input
 
@@ -461,8 +472,9 @@ with tab3:
         # Append user message to UI and disk
         st.session_state["messages"].append({"role": "user", "content": query})
         append_chat_message("user", query)
-        with st.chat_message("user"):
-            st.markdown(query)
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(query)
 
         # Build context including athlete notes
         last_ride = activities[0] if activities else {}
@@ -481,17 +493,19 @@ with tab3:
             "athlete_notes": load_memory().get("athlete_notes", []),
         }
 
-        # Generate response
-        with st.chat_message("assistant"):
-            with st.spinner("코치가 선수의 장기 기억과 파워 데이터를 종합 분석 중입니다..."):
-                answer = coach_agent.consult(
-                    user_message=query,
-                    chat_history=st.session_state["messages"][:-1],
-                    athlete_context=athlete_context,
-                )
-                st.markdown(answer)
-                st.session_state["messages"].append({"role": "assistant", "content": answer})
-                append_chat_message("assistant", answer)
+        # Generate response inside chat container
+        with chat_container:
+            with st.chat_message("assistant"):
+                with st.spinner("코치가 선수의 장기 기억과 파워 데이터를 종합 분석 중입니다..."):
+                    answer = coach_agent.consult(
+                        user_message=query,
+                        chat_history=st.session_state["messages"][:-1],
+                        athlete_context=athlete_context,
+                    )
+                    st.markdown(answer)
+                    st.session_state["messages"].append({"role": "assistant", "content": answer})
+                    append_chat_message("assistant", answer)
 
-                # Auto-extract new insights about the athlete to long-term memory
-                auto_extract_athlete_insight(coach_agent, query, answer)
+                    # Auto-extract new insights about the athlete to long-term memory
+                    auto_extract_athlete_insight(coach_agent, query, answer)
+        st.rerun()

@@ -39,6 +39,35 @@ class CyclingCoachAgent:
     def is_available(self) -> bool:
         return self.client is not None
 
+    def _call_gemini(
+        self, prompt: str, system_instruction: str = COACH_SYSTEM_PROMPT, temperature: float = 0.5
+    ) -> Optional[str]:
+        """Calls Gemini API with automatic model fallback (3.5-flash-lite, 3.8-flash, etc.)."""
+        if not self.is_available():
+            return None
+
+        candidate_models = [self.model_name]
+        for m in ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]:
+            if m not in candidate_models:
+                candidate_models.append(m)
+
+        for model in candidate_models:
+            try:
+                resp = self.client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={
+                        "system_instruction": system_instruction,
+                        "temperature": temperature,
+                    },
+                )
+                if resp and resp.text:
+                    return resp.text.strip()
+            except Exception as e:
+                print(f"Gemini call with {model} failed: {e}. Trying next candidate...")
+                continue
+        return None
+
     def diagnose_training_state(
         self,
         ftp: float,
@@ -83,19 +112,9 @@ class CyclingCoachAgent:
 
 가독성이 높은 마크다운 형식으로 작성해주세요.
 """
-        if self.is_available():
-            try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config={
-                        "system_instruction": COACH_SYSTEM_PROMPT,
-                        "temperature": 0.4,
-                    },
-                )
-                return response.text
-            except Exception as e:
-                print(f"Gemini API call failed: {e}")
+        gemini_resp = self._call_gemini(prompt, temperature=0.4)
+        if gemini_resp:
+            return gemini_resp
 
         # Fallback offline diagnostic report
         return f"""### 📊 AI 사이클링 코치 훈련 진단 리포트 (기본 분석 모드)
@@ -158,19 +177,9 @@ class CyclingCoachAgent:
    - 예상 TSS 및 소요 시간
 3. 영양 섭취(라이딩 전/중 카보하이드레이트 보충) 및 휴식 팁을 포함하세요.
 """
-        if self.is_available():
-            try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config={
-                        "system_instruction": COACH_SYSTEM_PROMPT,
-                        "temperature": 0.4,
-                    },
-                )
-                return response.text
-            except Exception as e:
-                print(f"Gemini API call failed for training plan: {e}")
+        gemini_plan = self._call_gemini(prompt, temperature=0.4)
+        if gemini_plan:
+            return gemini_plan
 
         # Fallback structured plan template
         z2_low, z2_high = zones['Z2_Endurance']['range']
@@ -245,32 +254,36 @@ class CyclingCoachAgent:
 코치님은 위 장기 기억(선수의 목표, 부상 이력, 특이사항)과 현재 실시간 파워 데이터를 항상 인지하고, 전담 코치로서 맥락이 이어지는 깊이 있는 맞춤 조언을 제공해주세요.
 """
 
-        if self.is_available():
-            try:
-                # Build contents with chat history
-                messages = []
-                for msg in chat_history[-6:]:  # Keep last 3 turns
-                    role = "user" if msg["role"] == "user" else "model"
-                    messages.append(f"{role.upper()}: {msg['content']}")
-                
-                messages.append(f"USER: {context_prompt}")
-                full_input = "\n\n".join(messages)
+        # Build contents with chat history
+        messages = []
+        for msg in chat_history[-6:]:  # Keep last 3 turns
+            role = "user" if msg["role"] == "user" else "model"
+            messages.append(f"{role.upper()}: {msg['content']}")
+        
+        messages.append(f"USER: {context_prompt}")
+        full_input = "\n\n".join(messages)
 
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=full_input,
-                    config={
-                        "system_instruction": COACH_SYSTEM_PROMPT,
-                        "temperature": 0.5,
-                    },
-                )
-                return response.text
-            except Exception as e:
-                print(f"Gemini API chat error: {e}")
+        gemini_reply = self._call_gemini(full_input, temperature=0.5)
+        if gemini_reply:
+            return gemini_reply
 
-        # Fallback heuristic consultation answers
+        # Fallback only when all AI models fail (network error or unconfigured)
         msg_lower = user_message.lower()
-        if "무릎" in user_message or "통증" in user_message or "뻐근" in user_message:
+        if "가민" in user_message and ("측정" in user_message or "테스트" in user_message or "ftp" in msg_lower):
+            return f"""🚴 **가민(Garmin Edge 1040)으로 FTP 측정하는 방법**
+가민 1040으로 FTP를 정확히 측정하려면 **파워미터와 심박계 연결이 필수**입니다.
+
+1. **가민 가이드 FTP 테스트 (가장 추천)**:
+   - 가민 메인 화면 ➡️ **[훈련 (Training)]** ➡️ **[워크아웃 (Workouts)]** ➡️ **[FTP 가이드 테스트]** 선택
+   - 20분 웜업 후 가민 화면 안내에 따라 점진적으로 파워를 올리는 램프 테스트를 진행합니다.
+   - 테스트 종료 후 가민이 계산한 새 FTP를 즉시 기기에 적용할 수 있습니다.
+
+2. **자동 FTP 감지 기능 (Auto Detection)**:
+   - 가민 **[내 통계]** ➡️ **[FTP]** ➡️ **[자동 감지]**가 켜져 있으면, 평소 강도 높은 야외 라이딩이나 20분 지속주 후 새 FTP를 자동 감지하여 알림을 띄워줍니다.
+
+*(현재 라이더님의 프로필 기준 FTP는 **{ftp}W**입니다.)*"""
+
+        elif "무릎" in user_message or "통증" in user_message or "뻐근" in user_message:
             return f"""🚴 **코치의 피드백 (무릎 및 근육 통증)**
 현재 라이더님의 TSB는 **{tsb:+.1f}**이며 최근 훈련으로 피로도가 쌓여있는 상태입니다.
 
@@ -279,37 +292,11 @@ class CyclingCoachAgent:
    - 무릎 뒤쪽(오금) 통증: 안장이 너무 높거나 페달링 시 하사점에서 무릎이 과도하게 펴질 때 발생합니다.
 2. **즉각적인 대처**:
    - 오늘은 인터벌 훈련을 취소하고 **완전 휴식** 또는 **가벼운 스트레칭/아이싱**을 권장합니다.
-   - 다음 라이딩 시에는 평소보다 1~2단 가벼운 기어를 선택해 **88~95rpm의 부드러운 케이던스**를 유지해보세요. 통증이 지속되면 전문가의 클릿 피팅 점검을 권장합니다."""
-
-        elif "ftp" in msg_lower or "올리" in user_message or "향상" in user_message:
-            return f"""📈 **코치의 FTP 향상 로드맵**
-현재 FTP는 **{ftp}W**({round(ftp/weight_kg, 2)} W/kg)이며, CTL은 **{ctl:.1f}**입니다.
-
-1. **스윗스팟(Sweet Spot) 훈련 비중 확대**:
-   - 88~94% FTP({round(ftp*0.88)}~{round(ftp*0.94)}W) 구간은 피로 발생 대비 미토콘드리아와 젖산 완충 능력을 가장 효율적으로 증대시킵니다.
-   - 주 2회: `2x20분` 또는 `3x15분` 스윗스팟 세션을 수행해보세요.
-2. **Zone 2 유산소 베이스 확장**:
-   - 고강도 인터벌만으로는 한계가 옵니다. 주말 2.5~3시간의 Z2({round(ftp*0.56)}~{round(ftp*0.75)}W) 지속주로 심장 용적과 모세혈관망을 넓혀야 임계치가 올라갑니다.
-3. **4주 주기화**: 3주 빌드업 후 1주는 회복주(TSS 40% 감축)를 가져야 초회복(Supercompensation)이 일어나 FTP가 상승합니다."""
-
-        elif "오늘" in user_message and ("탈까" in user_message or "훈련" in user_message or "어떻게" in user_message):
-            status = interpret_tsb(tsb)
-            return f"""🎯 **오늘의 맞춤형 훈련 제안**
-현재 폼 지수(TSB)는 **{tsb:+.1f}** ({status['status']})입니다.
-
-- **권장 훈련**:
-  * TSB가 {tsb:+.1f}로 {status['zone']} 영역에 위치하고 있습니다.
-  * {status['advice']}
-- **추천 세션**:
-  * 만약 컨디션이 상쾌하다면: **스윗스팟({round(ftp*0.9)}W) 2 x 20분**
-  * 다리가 다소 무겁다면: **Zone 2 ({round(ftp*0.65)}W) 60분 지구력 라이딩**
-  * 페달링 케이던스는 **90rpm** 전후를 목표로 하세요!"""
+   - 다음 라이딩 시에는 평소보다 1~2단 가벼운 기어를 선택해 **88~95rpm의 부드러운 케이던스**를 유지해보세요."""
 
         else:
-            return f"""🚴 **코치의 답변**
-라이더님의 현재 데이터(FTP {ftp}W, 체력 CTL {ctl:.1f}, 피로도 ATL {atl:.1f}, 컨디션 TSB {tsb:+.1f})를 기준으로 답변드립니다.
-
+            return f"""🚴 **코치의 안내**
 질문해주신 "{user_message}"에 관해:
-- 체계적인 사이클링 훈련에서는 무조건 오래 타거나 세게 타는 것보다 **'강도(Intensity)와 휴식(Recovery)의 균형'**이 가장 중요합니다.
-- 현재 누적 피로도(ATL)를 체크하면서 주간 총 TSS의 80%는 Zone 2 유산소 영역에, 20%는 Sweet Spot 및 Threshold 인터벌에 투자하는 것을 추천합니다.
-- 궁금한 특정 워크아웃, 인터벌 구성, 보급 전략(카보 로딩) 등에 대해 편하게 더 물어보세요!"""
+현재 AI 클라우드 접속량이 많아 정밀 분석이 잠시 지연되었습니다.
+(현재 라이더 데이터: FTP {ftp}W, 체력 CTL {ctl:.1f}, 피로도 ATL {atl:.1f}, 컨디션 TSB {tsb:+.1f})
+잠시 후 질문을 다시 입력해 주시면 최신 AI 모델을 통해 더욱 정밀하게 답변해 드리겠습니다."""

@@ -154,15 +154,16 @@ api_key_input = st.sidebar.text_input(
 )
 model_name = st.sidebar.selectbox(
     "Gemini 모델",
-    ["gemini-3.8-flash", "gemini-3.5-flash-lite"],
+    ["gemini-3.5-flash-lite (추천 / 초고속)", "gemini-3.8-flash"],
     index=0,
 )
+model_name_clean = "gemini-3.5-flash-lite" if "3.5" in model_name else "gemini-3.8-flash"
 
 if not api_key_input:
     st.sidebar.info("💡 API Key 없이도 내장된 전문 코칭 규칙 엔진으로 기본 기능이 완벽히 작동합니다. 키를 입력하시면 실시간 심층 코칭이 활성화됩니다.")
 
 # Initialize AI Coach Agent
-coach_agent = CyclingCoachAgent(api_key=api_key_input or None, model_name=model_name)
+coach_agent = CyclingCoachAgent(api_key=api_key_input or None, model_name=model_name_clean)
 
 # ----------------- DATA PREPARATION -----------------
 @st.cache_data(ttl=300)

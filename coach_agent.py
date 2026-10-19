@@ -227,8 +227,13 @@ class CyclingCoachAgent:
         atl = athlete_context.get("atl", 55.0)
         tsb = athlete_context.get("tsb", -5.0)
         recent_ride = athlete_context.get("last_ride_summary", "최근 라이딩 기록 없음")
+        athlete_notes = athlete_context.get("athlete_notes", [])
+        notes_str = "\n".join([f"- {n}" for n in athlete_notes]) if athlete_notes else "- 특이사항 없음"
 
         context_prompt = f"""
+[코치가 기억하고 있는 라이더 핵심 메모 (장기 기억)]
+{notes_str}
+
 [현재 상담 라이더의 실시간 데이터]
 - FTP: {ftp}W (체중 {weight_kg}kg, W/kg: {round(ftp/max(1.0, weight_kg), 2)})
 - 현재 PMC 지표: CTL(체력)={ctl:.1f}, ATL(피로도)={atl:.1f}, TSB(컨디션)={tsb:+.1f}
@@ -237,7 +242,7 @@ class CyclingCoachAgent:
 [라이더의 질문]
 "{user_message}"
 
-위 질문에 대해 전문 코치로서 데이터와 운동 생리학적 원리를 근거로 친절하고 실용적인 답변을 제공해주세요.
+코치님은 위 장기 기억(선수의 목표, 부상 이력, 특이사항)과 현재 실시간 파워 데이터를 항상 인지하고, 전담 코치로서 맥락이 이어지는 깊이 있는 맞춤 조언을 제공해주세요.
 """
 
         if self.is_available():

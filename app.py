@@ -28,6 +28,14 @@ from power_metrics import (
     calculate_aerobic_decoupling,
 )
 from coach_agent import CyclingCoachAgent
+from memory_manager import (
+    load_memory,
+    add_athlete_note,
+    remove_athlete_note,
+    append_chat_message,
+    clear_chat_history,
+    auto_extract_athlete_insight,
+)
 
 # Page configuration
 st.set_page_config(
@@ -375,6 +383,45 @@ with tab3:
     st.subheader("💬 AI 사이클링 코치 1:1 실시간 상담실")
     st.caption("훈련 루틴, 오늘의 피로도 대처, 인터벌 페이싱, 보급(카보로딩), 페달링 테크닉 등 무엇이든 질문하세요.")
 
+    # Load persistent memory
+    mem_data = load_memory()
+    athlete_notes = mem_data.get("athlete_notes", [])
+
+    # Memory & Notes Management Expander
+    with st.expander("🧠 코치가 기억하고 있는 라이더 핵심 메모 (장기 기억)", expanded=False):
+        st.markdown(
+            "코치는 브라우저를 닫거나 며칠 뒤에 다시 들어와도 아래 등록된 **선수 특이사항, 부상 이력, 목표**를 영구적으로 기억하고 상담에 반영합니다."
+        )
+        if athlete_notes:
+            for idx, note in enumerate(athlete_notes):
+                col_n_text, col_n_del = st.columns([8, 1])
+                col_n_text.markdown(f"• **{note}**")
+                if col_n_del.button("삭제", key=f"del_note_{idx}"):
+                    remove_athlete_note(idx)
+                    st.rerun()
+        else:
+            st.info("등록된 특이사항 메모가 없습니다. 아래에서 새로 추가해 보세요.")
+
+        # Add new note input
+        col_new_in, col_new_btn = st.columns([6, 1])
+        new_note_text = col_new_in.text_input(
+            "새 메모 추가",
+            placeholder="예: 2026년 5월 설악 그란폰도 완주 목표, 오른쪽 무릎 외측 통증 주의",
+            label_visibility="collapsed",
+        )
+        if col_new_btn.button("➕ 추가", use_container_width=True):
+            if new_note_text.strip():
+                add_athlete_note(new_note_text)
+                st.rerun()
+
+    # Chat Controls (Clear History)
+    col_chat_title, col_chat_clear = st.columns([5, 1])
+    with col_chat_clear:
+        if st.button("🗑️ 대화 기록 초기화", use_container_width=True, help="저장된 대화 내역을 모두 지우고 새 대화를 시작합니다 (핵심 메모는 유지됨)"):
+            clear_chat_history()
+            st.session_state["messages"] = []
+            st.rerun()
+
     # Quick prompt buttons
     st.write("💡 **자주 묻는 추천 질문:**")
     q_col1, q_col2, q_col3, q_col4 = st.columns(4)
@@ -388,14 +435,18 @@ with tab3:
     if q_col4.button("🍌 그란폰도 대회 전 테이퍼링과 보급", use_container_width=True):
         quick_prompt = "100km 그란폰도 대회가 2주 남았는데 훈련 볼륨 테이퍼링과 시합 당일 파워젤 보급 전략을 알려주세요."
 
-    # Chat history state
-    if "messages" not in st.session_state:
-        st.session_state["messages"] = [
-            {
+    # Initialize messages from persistent storage
+    if "messages" not in st.session_state or not st.session_state["messages"]:
+        saved_msgs = mem_data.get("messages", [])
+        if saved_msgs:
+            st.session_state["messages"] = saved_msgs
+        else:
+            default_greeting = {
                 "role": "assistant",
                 "content": f"안녕하세요, 라이더님! 🚴 AI 사이클링 코치입니다.\n현재 라이더님의 FTP는 **{ftp_input}W**({w_per_kg} W/kg), 컨디션 폼(TSB)은 **{latest_pmc['tsb']:+.1f}**입니다.\n오늘 라이딩 피드백, 인터벌 페이싱, 맞춤형 훈련 고민 등 무엇이든 편하게 물어보세요!",
             }
-        ]
+            st.session_state["messages"] = [default_greeting]
+            append_chat_message(default_greeting["role"], default_greeting["content"])
 
     # Display chat history
     for msg in st.session_state["messages"]:
@@ -407,12 +458,13 @@ with tab3:
     query = quick_prompt or user_input
 
     if query:
-        # Append user message
+        # Append user message to UI and disk
         st.session_state["messages"].append({"role": "user", "content": query})
+        append_chat_message("user", query)
         with st.chat_message("user"):
             st.markdown(query)
 
-        # Build context
+        # Build context including athlete notes
         last_ride = activities[0] if activities else {}
         last_ride_summary = (
             f"{last_ride.get('name', '라이딩')} (거리: {round(last_ride.get('distance', 0)/1000, 1)}km, "
@@ -426,11 +478,12 @@ with tab3:
             "atl": latest_pmc["atl"],
             "tsb": latest_pmc["tsb"],
             "last_ride_summary": last_ride_summary,
+            "athlete_notes": load_memory().get("athlete_notes", []),
         }
 
         # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("코치가 데이터를 분석하여 답변을 작성 중입니다..."):
+            with st.spinner("코치가 선수의 장기 기억과 파워 데이터를 종합 분석 중입니다..."):
                 answer = coach_agent.consult(
                     user_message=query,
                     chat_history=st.session_state["messages"][:-1],
@@ -438,3 +491,7 @@ with tab3:
                 )
                 st.markdown(answer)
                 st.session_state["messages"].append({"role": "assistant", "content": answer})
+                append_chat_message("assistant", answer)
+
+                # Auto-extract new insights about the athlete to long-term memory
+                auto_extract_athlete_insight(coach_agent, query, answer)

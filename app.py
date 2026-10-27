@@ -1,6 +1,6 @@
 """
-AI Cycling Coach & Garmin Edge 1040 / Strava Training Dashboard
-Built with Streamlit, Plotly, Garmin FIT Parser, Strava API, and Google Gemini.
+AI Cycling Coach & Live Strava Training Dashboard (with Garmin .fit Baseline Reference)
+Built with Streamlit, Plotly, Strava API v3, and Google Gemini.
 """
 
 from collections import defaultdict
@@ -23,11 +23,10 @@ from config import (
     DEFAULT_LTHR,
     DEFAULT_REST_HR,
 )
-from strava_client import StravaClient
+from strava_client import StravaClient, estimate_ftp_from_live_activities
 from garmin_loader import (
     load_garmin_raw_activities,
     convert_garmin_to_dashboard_activities,
-    estimate_dynamic_ftp,
 )
 from power_metrics import (
     get_power_zones,
@@ -48,7 +47,7 @@ from memory_manager import (
 
 # Page configuration
 st.set_page_config(
-    page_title="AI 사이클링 코치 & 가민 1040 분석기",
+    page_title="AI 사이클링 코치 & Strava 훈련 플래너",
     page_icon="🚴",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -102,7 +101,7 @@ col_sb1, col_sb2 = st.sidebar.columns(2)
 with col_sb1:
     ftp_input = st.number_input(
         "기준 FTP (W)", min_value=100, max_value=500, value=init_ftp, step=1,
-        help="권장 실전 FTP: 195~198W (잠재 올아웃 FTP: 200~205W)"
+        help="1시간 동안 지속할 수 있는 최대 평균 파워(FTP). 언제든 직접 수정하거나 아래 Strava 자동 산출값으로 갱신할 수 있습니다."
     )
 with col_sb2:
     weight_input = st.number_input(
@@ -145,58 +144,67 @@ st.sidebar.caption(
     f"⚡ **체중당 FTP**: `{w_per_kg} W/kg` | ❤️ **LTHR**: `{lthr_input} bpm` (Max `{max_hr_input}`)"
 )
 
-# Pre-load garmin activities so we can show dynamic FTP estimation in sidebar
-_init_garmin_acts = load_garmin_raw_activities()
-dyn_est = estimate_dynamic_ftp(_init_garmin_acts, lthr=lthr_input)
+st.sidebar.divider()
+
+# Data Source Section (Strava is #1 Default!)
+st.sidebar.subheader("📡 데이터 소스 연동")
+data_options = [
+    "🔗 Strava 실시간 자동 연동 (기본)",
+    "📋 가민 .fit 정밀 분석 참고치 (2026.09~10, 40회)",
+]
+data_mode = st.sidebar.radio("데이터 수집 방식", data_options, index=0)
+
+s_client_id = STRAVA_CLIENT_ID
+s_client_secret = STRAVA_CLIENT_SECRET
+s_refresh_token = STRAVA_REFRESH_TOKEN
+
+if data_mode.startswith("🔗"):
+    if st.sidebar.button("🔄 Strava 최신 라이딩 즉시 새로고침", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    with st.sidebar.expander("⚙️ Strava API 연결 설정", expanded=not bool(STRAVA_CLIENT_ID and STRAVA_REFRESH_TOKEN)):
+        s_client_id = st.text_input("Client ID", value=STRAVA_CLIENT_ID)
+        s_client_secret = st.text_input("Client Secret", value=STRAVA_CLIENT_SECRET, type="password")
+        s_refresh_token = st.text_input("Refresh Token", value=STRAVA_REFRESH_TOKEN, type="password")
+
+# ----------------- DATA PREPARATION -----------------
+@st.cache_data(ttl=300)
+def load_strava_activities(c_id: str, c_sec: str, r_tok: str, ftp: float):
+    client = StravaClient(c_id, c_sec, r_tok)
+    return client.get_activities(ftp=ftp, per_page=100)
+
+garmin_ref_acts = load_garmin_raw_activities()
+
+if data_mode.startswith("🔗"):
+    activities = load_strava_activities(
+        c_id=s_client_id,
+        c_sec=s_client_secret,
+        r_tok=s_refresh_token,
+        ftp=ftp_input,
+    )
+else:
+    activities = convert_garmin_to_dashboard_activities(
+        garmin_ref_acts, ftp=ftp_input, recalc_tss_with_ftp=True
+    )
+
+# Dynamic FTP Estimator in Sidebar (computed directly from live Strava rides!)
+live_ftp_est = estimate_ftp_from_live_activities(activities, lthr=lthr_input)
 st.sidebar.info(
-    f"🤖 **최근 주행 기반 동적 산출**\n"
-    f"• 권장 실전 FTP: **`{dyn_est['recommended_ftp']} W`** (잠재 `{dyn_est['potential_max_ftp']} W`)\n"
-    f"• 가민 최근 감지: `{dyn_est['latest_garmin_ftp']} W` (최고 `{dyn_est['max_garmin_ftp']} W`)\n"
-    f"• 최근 기록 체중: `{dyn_est['latest_weight']} kg`"
+    f"🤖 **최근 Strava 주행 기반 추정 FTP**\n"
+    f"• 권장 실전 FTP: **`{live_ftp_est['recommended_ftp']} W`** (잠재 `{live_ftp_est['potential_max_ftp']} W`)\n"
+    f"• 고강도 주행 평균 EF: `{live_ftp_est['avg_hard_ef']}`\n"
+    f"• 50분+ 최고 NP: `{live_ftp_est['max_np_60m']} W`"
 )
-if st.sidebar.button("🔄 최신 주행 분석값(FTP·체중) 자동 적용", use_container_width=True):
+if st.sidebar.button("⚡ Strava 산출 권장 FTP 자동 적용", use_container_width=True):
     update_athlete_profile(
-        ftp=dyn_est["recommended_ftp"],
-        weight_kg=dyn_est["latest_weight"],
+        ftp=live_ftp_est["recommended_ftp"],
+        weight_kg=round(weight_input, 1),
         max_hr=max_hr_input,
         lthr=lthr_input,
         rest_hr=rest_hr_input,
     )
     st.rerun()
-
-st.sidebar.divider()
-
-# Data Source Section
-st.sidebar.subheader("📡 데이터 소스 연동")
-data_options = [
-    "⌚ 가민 Edge 1040 실측 데이터 (40회 + .fit 업로드)",
-    "🔗 Strava API 연동",
-    "🧪 샘플 라이딩 데이터로 즉시 체험",
-]
-data_mode = st.sidebar.radio("데이터 수집 방식", data_options, index=0)
-
-uploaded_fit_files = None
-recalc_tss = False
-s_client_id = STRAVA_CLIENT_ID
-s_client_secret = STRAVA_CLIENT_SECRET
-s_refresh_token = STRAVA_REFRESH_TOKEN
-
-if data_mode.startswith("⌚"):
-    uploaded_fit_files = st.sidebar.file_uploader(
-        "📂 새 가민 .fit 파일 추가 업로드 (선택)",
-        type=["fit"],
-        accept_multiple_files=True,
-        help="Edge 1040의 Garmin\\Activities 폴더에서 새 .fit 파일을 드래그 앤 드롭하면 기존 40회 데이터에 즉시 병합됩니다.",
-    )
-    recalc_tss = st.sidebar.checkbox(
-        "현재 입력된 FTP로 전체 TSS/IF 재계산",
-        value=False,
-        help="체크 시 가민 파일에 기록된 당시 TSS 대신 현재 사이드바의 FTP 기준으로 TSS를 일괄 재계산합니다.",
-    )
-elif data_mode == "🔗 Strava API 연동":
-    s_client_id = st.sidebar.text_input("Client ID", value=STRAVA_CLIENT_ID)
-    s_client_secret = st.sidebar.text_input("Client Secret", value=STRAVA_CLIENT_SECRET, type="password")
-    s_refresh_token = st.sidebar.text_input("Refresh Token", value=STRAVA_REFRESH_TOKEN, type="password")
 
 st.sidebar.divider()
 
@@ -221,27 +229,6 @@ model_name_clean = model_name.split(" ")[0].strip()
 
 coach_agent = CyclingCoachAgent(api_key=api_key_input or None, model_name=model_name_clean)
 
-# ----------------- DATA PREPARATION -----------------
-garmin_raw_acts = load_garmin_raw_activities(uploaded_fit_files)
-
-@st.cache_data(ttl=300)
-def load_strava_or_sample(is_strava: bool, c_id: str, c_sec: str, r_tok: str, ftp: float):
-    client = StravaClient(c_id, c_sec, r_tok) if is_strava else StravaClient()
-    return client.get_activities(ftp=ftp, per_page=60)
-
-if data_mode.startswith("⌚"):
-    activities = convert_garmin_to_dashboard_activities(
-        garmin_raw_acts, ftp=ftp_input, recalc_tss_with_ftp=recalc_tss
-    )
-else:
-    activities = load_strava_or_sample(
-        is_strava=(data_mode == "🔗 Strava API 연동"),
-        c_id=s_client_id if data_mode == "🔗 Strava API 연동" else "",
-        c_sec=s_client_secret if data_mode == "🔗 Strava API 연동" else "",
-        r_tok=s_refresh_token if data_mode == "🔗 Strava API 연동" else "",
-        ftp=ftp_input,
-    )
-
 
 def build_pmc_dataframe(act_list: list) -> pd.DataFrame:
     if not act_list:
@@ -249,7 +236,8 @@ def build_pmc_dataframe(act_list: list) -> pd.DataFrame:
         return calculate_pmc(pd.Series(0.0, index=dates))
 
     df_act = pd.DataFrame(act_list)
-    df_act["date"] = pd.to_datetime(df_act["start_date"]).dt.date
+    # Use start_date_local[:10] for accurate KST local date grouping
+    df_act["date"] = pd.to_datetime(df_act["start_date_local"].str[:10]).dt.date
     daily_tss = df_act.groupby("date")["tss"].sum()
 
     min_date = daily_tss.index.min()
@@ -270,10 +258,10 @@ latest_pmc = {
 tsb_status = interpret_tsb(latest_pmc["tsb"])
 
 # Header
-st.title("🚴 AI 사이클링 코치 & 가민 Edge 1040 퍼포먼스 분석기")
+st.title("🚴 AI 사이클링 코치 & Strava 실시간 파워 훈련 플래너")
 st.markdown(
-    "가민 엣지 1040 실측 `.fit` 데이터(40회, **2,061.1km / +18,105m**)를 기반으로 "
-    "**FTP(W/kg), 심박·파워존, 유산소 효율(EF), 좌우 밸런스, 체력(CTL)/피로도(ATL)/컨디션(TSB)**을 정밀 분석합니다."
+    "가민 엣지 1040에서 **Strava로 자동 동기화되는 실시간 라이딩 데이터**를 기반으로 "
+    "**FTP(W/kg), 심박·파워존, 유산소 효율(EF), 체력(CTL)/피로도(ATL)/컨디션(TSB)**을 분석하고 맞춤형 코칭을 제공합니다."
 )
 
 # Top KPI Summary Cards (6 Columns)
@@ -287,9 +275,9 @@ with k1:
 with k2:
     st.metric("역치 심박 (LTHR)", f"{lthr_input} bpm", f"Max {max_hr_input} / 안정 {rest_hr_input}")
 with k3:
-    st.metric(f"누적 주행 ({len(activities)}회)", f"{total_km_all:,.1f} km", f"고도 +{total_elev_all:,.0f} m")
+    st.metric(f"연동 라이딩 ({len(activities)}회)", f"{total_km_all:,.1f} km", f"고도 +{total_elev_all:,.0f} m")
 with k4:
-    st.metric("체력 (CTL)", f"{latest_pmc['ctl']:.1f}", f"총 {total_tss_all:,.0f} TSS")
+    st.metric("체력 (CTL)", f"{latest_pmc['ctl']:.1f}", f"누적 {total_tss_all:,.0f} TSS")
 with k5:
     st.metric("피로도 (ATL)", f"{latest_pmc['atl']:.1f}", "단기 부하 (7일)")
 with k6:
@@ -306,7 +294,7 @@ st.divider()
 # Main Tabs (4 Tabs)
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 훈련 부하 & PMC 대시보드",
-    "🏆 가민 1040 심층 분석 (파워커브·효율·밸런스)",
+    "🏆 주간 볼륨·유산소 효율 & FIT 참고치",
     "📅 맞춤형 훈련 플랜 생성기",
     "💬 AI 코치 1:1 상담실",
 ])
@@ -361,7 +349,7 @@ with tab1:
         run_diag = st.button("🔍 AI 종합 진단 리포트 생성", use_container_width=True)
 
     if run_diag:
-        with st.spinner("AI 코치가 최근 라이딩 데이터와 파워 지표를 정밀 진단 중입니다..."):
+        with st.spinner("AI 코치가 Strava 최신 라이딩 데이터와 파워 지표를 정밀 진단 중입니다..."):
             diag_result = coach_agent.diagnose_training_state(
                 ftp=ftp_input,
                 weight_kg=weight_input,
@@ -392,7 +380,7 @@ with tab1:
         hr_zones_table = [
             {
                 "심박 존": "Zone 1 (회복 / 웜업)",
-                "%LTHR 기준": f"< 81% LTHR",
+                "%LTHR 기준": "< 81% LTHR",
                 "심박수 (%LTHR 추천)": f"~ {round(lthr_input * 0.81)} bpm",
                 "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.50)} ~ {round(max_hr_input * 0.60)} bpm",
                 "훈련 효과": "적극적 회복 및 혈류 촉진",
@@ -420,7 +408,7 @@ with tab1:
             },
             {
                 "심박 존": "Zone 5 (VO2 Max / 무산소)",
-                "%LTHR 기준": f"100%+ LTHR (~Max)",
+                "%LTHR 기준": "100%+ LTHR (~Max)",
                 "심박수 (%LTHR 추천)": f"{lthr_input + 1} ~ {max_hr_input} bpm",
                 "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.90)} ~ {max_hr_input} bpm",
                 "훈련 효과": "최대 산소 섭취량 및 고강도 인터벌",
@@ -428,18 +416,19 @@ with tab1:
         ]
         st.dataframe(pd.DataFrame(hr_zones_table), use_container_width=True, hide_index=True)
 
-    st.subheader("🚴 최근 라이딩 활동 요약 (최근 12회)")
+    st.subheader(f"🚴 실시간 연동 라이딩 활동 내역 (총 {len(activities)}회)")
     if activities:
         recent_table = []
-        for act in activities[:12]:
+        for act in activities:
             recent_table.append({
                 "날짜": act["start_date_local"][:16].replace("T", " "),
-                "라이딩 / 워크아웃": act["name"],
+                "라이딩명": act["name"],
+                "구분": "실내" if act.get("sub_sport") == "indoor_cycling" else "야외 도로",
                 "거리(km)": round(act["distance"] / 1000.0, 1),
                 "이동시간(분)": round(act["moving_time"] / 60.0, 1),
                 "획득고도(m)": int(act.get("total_elevation_gain", 0)),
-                "평균 파워(W)": round(act.get("average_watts", 0)),
-                "NP(W)": round(act.get("weighted_average_watts") or act.get("average_watts", 0)),
+                "평균 파워(W)": round(act.get("average_watts") or 0),
+                "NP(W)": round(act.get("weighted_average_watts") or act.get("average_watts") or 0),
                 "평균/최대 심박": f"{int(act.get('average_heartrate') or 0)} / {int(act.get('max_heartrate') or 0)}",
                 "케이던스": int(act.get("average_cadence") or 0),
                 "EF(효율)": act.get("ef") or "-",
@@ -449,62 +438,65 @@ with tab1:
         st.dataframe(pd.DataFrame(recent_table), use_container_width=True, hide_index=True)
 
 
-# ----------------- TAB 2: GARMIN 1040 DEEP DIVE -----------------
+# ----------------- TAB 2: LIVE STRAVA DEEP DIVE + FIT BASELINE REFERENCE -----------------
 with tab2:
-    st.subheader("🏆 가민 Edge 1040 실측 데이터 심층 분석 (2026.09.01 ~ 10.27)")
+    st.subheader("🏆 실시간 Strava 주간 볼륨·유산소 효율 추이 & 가민 `.fit` 정밀 분석 참고치")
 
-    if not garmin_raw_acts:
-        st.warning("가민 활동 데이터를 불러올 수 없습니다.")
-    else:
-        road_acts = [a for a in garmin_raw_acts if a.get("sub_sport") == "road"]
-        ind_acts = [a for a in garmin_raw_acts if a.get("sub_sport") == "indoor_cycling"]
+    if activities:
+        # Sort chronological for trend charts
+        chrono_acts = list(reversed(activities))
+        road_live = [a for a in chrono_acts if a.get("sub_sport") != "indoor_cycling"]
+        ind_live = [a for a in chrono_acts if a.get("sub_sport") == "indoor_cycling"]
 
-        road_km = sum((a.get("distance_m") or 0) for a in road_acts) / 1000.0
-        ind_km = sum((a.get("distance_m") or 0) for a in ind_acts) / 1000.0
-        road_h = sum((a.get("timer_time_s") or 0) for a in road_acts) / 3600.0
-        ind_h = sum((a.get("timer_time_s") or 0) for a in ind_acts) / 3600.0
-        road_ef = np.mean([a["ef"] for a in road_acts if a.get("ef")])
-        ind_ef = np.mean([a["ef"] for a in ind_acts if a.get("ef")])
-        road_cad = np.mean([a["avg_cadence"] for a in road_acts if a.get("avg_cadence")])
-        ind_cad = np.mean([a["avg_cadence"] for a in ind_acts if a.get("avg_cadence")])
+        r_km = sum(a.get("distance", 0) for a in road_live) / 1000.0
+        i_km = sum(a.get("distance", 0) for a in ind_live) / 1000.0
+        r_h = sum(a.get("moving_time", 0) for a in road_live) / 3600.0
+        i_h = sum(a.get("moving_time", 0) for a in ind_live) / 3600.0
+        r_ef_vals = [a["ef"] for a in road_live if a.get("ef")]
+        i_ef_vals = [a["ef"] for a in ind_live if a.get("ef")]
+        r_cad_vals = [a["average_cadence"] for a in road_live if a.get("average_cadence")]
+        i_cad_vals = [a["average_cadence"] for a in ind_live if a.get("average_cadence")]
 
-        c_sum1, c_sum2, c_sum3 = st.columns(3)
-        with c_sum1:
+        c1, c2, c3 = st.columns(3)
+        with c1:
             st.info(
-                f"🛣️ **야외 도로 라이딩 (`도로`, {len(road_acts)}회)**\n"
-                f"- 누적 거리: **{road_km:,.1f} km** ({road_h:.1f}시간)\n"
-                f"- 누적 획득고도: **18,105 m** (회당 평균 862m)\n"
-                f"- 평균 NP: **148.2 W** | 평균 EF: **{road_ef:.2f}** | 평균 케이던스: **{road_cad:.1f} rpm**"
+                f"🛣️ **야외 도로 라이딩 ({len(road_live)}회 - Strava 실시간)**\n"
+                f"- 누적 거리: **{r_km:,.1f} km** ({r_h:.1f}시간)\n"
+                f"- 누적 획득고도: **{sum(a.get('total_elevation_gain', 0) for a in road_live):,.0f} m**\n"
+                f"- 평균 EF(효율): **{np.mean(r_ef_vals):.2f}** | 평균 케이던스: **{np.mean(r_cad_vals):.1f} rpm**"
+                if r_ef_vals and r_cad_vals else f"🛣️ **야외 도로 라이딩 ({len(road_live)}회)**"
             )
-        with c_sum2:
+        with c2:
             st.info(
-                f"🏠 **실내 스마트 트레이너 (`실내`, {len(ind_acts)}회)**\n"
-                f"- 누적 거리: **{ind_km:,.1f} km** ({ind_h:.1f}시간)\n"
-                f"- 구조화 워크아웃: **스프린트(7회), 기초체력(5회), 템포(2회), 한계치(2회), 회복(2회), VO2Max(1회)**\n"
-                f"- 평균 NP: **127.2 W** | 평균 EF: **{ind_ef:.2f}** | 평균 케이던스: **{ind_cad:.1f} rpm**"
+                f"🏠 **실내 스마트 트레이너 ({len(ind_live)}회 - Strava 실시간)**\n"
+                f"- 누적 거리: **{i_km:,.1f} km** ({i_h:.1f}시간)\n"
+                f"- 누적 TSS: **{sum(a.get('tss', 0) for a in ind_live):,.0f} TSS**\n"
+                f"- 평균 EF(효율): **{np.mean(i_ef_vals):.2f}** | 평균 케이던스: **{np.mean(i_cad_vals):.1f} rpm**"
+                if i_ef_vals and i_cad_vals else f"🏠 **실내 트레이너 ({len(ind_live)}회)**"
             )
-        with c_sum3:
+        with c3:
             st.success(
-                f"🎯 **핵심 피지컬 진화 요약**\n"
-                f"- 체중: **66.6 kg → 64.5 kg (-2.1 kg 감량)**\n"
-                f"- 실전 적정 FTP: **196 W (3.04 W/kg)** (잠재 올아웃 **200~205 W**)\n"
-                f"- 심박 검증: **LTHR 161 bpm / 최대심박 184 bpm** (9/5 1분 평균 181.8bpm 실측)"
+                f"📌 **2026.09~10 `.fit` 원본 정밀 검증 기준치**\n"
+                f"- 체중 감량: **66.6 kg → 64.5 kg (-2.1 kg)**\n"
+                f"- 실전 권장 FTP: **196 W (3.04 W/kg)** | 잠재 **200~205 W**\n"
+                f"- 심박 검증: **LTHR 161 bpm / 최대심박 184 bpm** (9/5 1분 평균 181.8bpm)"
             )
 
-        # 1) Weekly Volume, Elevation & TSS Chart
-        st.markdown("#### 1️⃣ 주간 주행 거리(도로 vs 실내), 획득고도(m) 및 주간 TSS 추이")
+        # 1) Live Weekly Volume, Elevation & TSS from Strava
+        st.markdown("#### 1️⃣ [Strava 실시간] 주간 주행 거리(도로 vs 실내), 획득고도(m) 및 주간 TSS 추이")
         weeks = defaultdict(list)
-        for a in garmin_raw_acts:
-            dt = datetime.strptime(a["date"], "%Y-%m-%d")
+        for a in chrono_acts:
+            d_str = a["start_date_local"][:10]
+            dt = datetime.strptime(d_str, "%Y-%m-%d")
             monday = dt - timedelta(days=dt.weekday())
             weeks[monday].append(a)
 
         sorted_mondays = sorted(weeks.keys())
         w_labels = [f"{i+1}주차 ({m.strftime('%m/%d')})" for i, m in enumerate(sorted_mondays)]
-        w_road_km = [sum((a.get("distance_m") or 0)/1000.0 for a in weeks[m] if a.get("sub_sport") == "road") for m in sorted_mondays]
-        w_ind_km = [sum((a.get("distance_m") or 0)/1000.0 for a in weeks[m] if a.get("sub_sport") == "indoor_cycling") for m in sorted_mondays]
-        w_elev = [sum((a.get("ascent_m") or 0) for a in weeks[m]) for m in sorted_mondays]
-        w_tss = [sum((a.get("tss") or 0) for a in weeks[m]) for m in sorted_mondays]
+        w_road_km = [sum(a.get("distance", 0)/1000.0 for a in weeks[m] if a.get("sub_sport") != "indoor_cycling") for m in sorted_mondays]
+        w_ind_km = [sum(a.get("distance", 0)/1000.0 for a in weeks[m] if a.get("sub_sport") == "indoor_cycling") for m in sorted_mondays]
+        w_elev = [sum(a.get("total_elevation_gain", 0) for a in weeks[m]) for m in sorted_mondays]
+        w_tss = [sum(a.get("tss", 0) for a in weeks[m]) for m in sorted_mondays]
 
         fig_wk = make_subplots(
             rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.10,
@@ -518,144 +510,117 @@ with tab2:
             row=1, col=1, secondary_y=True,
         )
         fig_wk.add_trace(go.Bar(x=w_labels, y=w_tss, name="주간 TSS", marker_color="#f43f5e"), row=2, col=1)
-        fig_wk.update_layout(barmode="stack", height=520, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20))
+        fig_wk.update_layout(barmode="stack", height=500, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig_wk, use_container_width=True)
 
-        # 2) Peak Power Curve (MMP) & Zone Distributions
-        st.markdown("#### 2️⃣ 피크 파워 커브 (1초 ~ 60분 MMP) 및 심박·파워 존 체류 분포")
-        col_mmp, col_zdist = st.columns([1.15, 1])
-
-        dur_keys = [
-            ("1초(Max)", "max_power"), ("5초", "mmp_5s"), ("15초", "mmp_15s"), ("30초", "mmp_30s"),
-            ("1분", "mmp_60s"), ("3분", "mmp_180s"), ("5분", "mmp_300s"), ("10분", "mmp_600s"),
-            ("20분", "mmp_1200s"), ("30분", "mmp_1800s"), ("60분", "mmp_3600s"),
-        ]
-        sept_acts = [a for a in garmin_raw_acts if a["date"].startswith("2026-09")]
-        oct_acts = [a for a in garmin_raw_acts if a["date"].startswith("2026-10")]
-
-        s_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in sept_acts]) for _, k in dur_keys]
-        o_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in oct_acts]) for _, k in dur_keys]
-        all_peaks = [max(s, o) for s, o in zip(s_peaks, o_peaks)]
-
-        with col_mmp:
-            fig_mmp = go.Figure()
-            fig_mmp.add_trace(go.Scatter(
-                x=[d[0] for d in dur_keys], y=s_peaks, mode="lines+markers",
-                name="9월 최고 파워 (W)", line=dict(color="#38bdf8", width=3),
-            ))
-            fig_mmp.add_trace(go.Scatter(
-                x=[d[0] for d in dur_keys], y=o_peaks, mode="lines+markers",
-                name="10월 최고 파워 (W)", line=dict(color="#f43f5e", width=3, dash="dash"),
-            ))
-            fig_mmp.update_layout(
-                title="구간별 최고 파워 커브 (9월 vs 10월)",
-                xaxis_title="지속 시간", yaxis_title="파워 (Watts)",
-                height=360, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig_mmp, use_container_width=True)
-
-        with col_zdist:
-            pwr_z = np.zeros(7)
-            for a in garmin_raw_acts:
-                tiz = a.get("time_in_power_zone")
-                if tiz:
-                    for i in range(1, min(8, len(tiz))):
-                        if tiz[i] is not None:
-                            pwr_z[i - 1] += float(tiz[i]) / 3600.0
-            pwr_pct = (pwr_z / max(0.001, np.sum(pwr_z))) * 100.0
-            pwr_labels = ["Z1 회복", "Z2 지구력", "Z3 템포", "Z4 역치", "Z5 VO2Max", "Z6 무산소", "Z7 신경근"]
-            fig_pz = go.Figure(go.Bar(
-                x=pwr_pct, y=pwr_labels, orientation="h",
-                text=[f"{p:.1f}% ({h:.1f}h)" for p, h in zip(pwr_pct, pwr_z)],
-                textposition="auto",
-                marker_color=["#94a3b8", "#38bdf8", "#22c55e", "#eab308", "#f97316", "#ef4444", "#a855f7"],
-            ))
-            fig_pz.update_layout(
-                title="8주 누적 파워 존(Z1~Z7) 체류 비율",
-                xaxis_title="비율 (%)", height=360, template="plotly_dark",
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig_pz, use_container_width=True)
-
-        # 3) Aerobic Efficiency (EF) & Pedaling Balance
-        st.markdown("#### 3️⃣ 유산소 효율 지수(EF = NP / 평균심박) 향상 추이 & 좌/우 페달링 밸런스")
-        col_ef, col_lr = st.columns(2)
-
+        # 2) Live Aerobic Efficiency (EF) & Cadence vs NP from Strava
+        st.markdown("#### 2️⃣ [Strava 실시간] 유산소 효율 지수(EF = NP / 심박수) 추이 & 실내·야외 케이던스 비교")
+        col_ef, col_cad = st.columns(2)
         with col_ef:
             fig_ef = go.Figure()
-            r_ef_acts = [a for a in road_acts if a.get("ef") and (a.get("timer_time_s") or 0) >= 1800]
-            i_ef_acts = [a for a in ind_acts if a.get("ef") and (a.get("timer_time_s") or 0) >= 1800]
+            r_ef_acts = [a for a in road_live if a.get("ef") and (a.get("moving_time") or 0) >= 1800]
+            i_ef_acts = [a for a in ind_live if a.get("ef") and (a.get("moving_time") or 0) >= 1800]
             fig_ef.add_trace(go.Scatter(
-                x=[a["date"] for a in r_ef_acts],
+                x=[a["start_date_local"][:10] for a in r_ef_acts],
                 y=[a["ef"] for a in r_ef_acts],
+                text=[a["name"] for a in r_ef_acts],
                 mode="markers+lines",
                 name="야외 도로 EF (NP/HR)",
                 marker=dict(size=10, color="#fb923c"),
                 line=dict(color="#fb923c", width=2),
             ))
             fig_ef.add_trace(go.Scatter(
-                x=[a["date"] for a in i_ef_acts],
+                x=[a["start_date_local"][:10] for a in i_ef_acts],
                 y=[a["ef"] for a in i_ef_acts],
+                text=[a["name"] for a in i_ef_acts],
                 mode="markers",
                 name="실내 트레이너 EF",
                 marker=dict(size=9, color="#a78bfa", symbol="diamond"),
             ))
             fig_ef.update_layout(
-                title="유산소 효율 지수 (EF = NP / HR) 추이",
+                title="유산소 효율 지수 (EF = NP / 평균심박) 변화 추이",
                 xaxis_title="날짜", yaxis_title="EF (W/bpm)",
                 height=350, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
             )
             st.plotly_chart(fig_ef, use_container_width=True)
 
-        with col_lr:
-            lr_acts = [a for a in garmin_raw_acts if a.get("left_pct") is not None]
-            fig_lr = go.Figure()
-            fig_lr.add_trace(go.Scatter(
-                x=[a["date"] for a in lr_acts],
-                y=[a["left_pct"] for a in lr_acts],
-                mode="lines+markers",
-                name="왼발 파워 비중 (%)",
-                marker=dict(size=9, color="#38bdf8"),
-                line=dict(color="#38bdf8", width=2),
+        with col_cad:
+            fig_cad = go.Figure()
+            fig_cad.add_trace(go.Scatter(
+                x=[a["average_cadence"] for a in road_live if a.get("average_cadence")],
+                y=[a.get("weighted_average_watts") or a.get("average_watts") for a in road_live if a.get("average_cadence")],
+                text=[f"{a['start_date_local'][:10]} {a['name']}" for a in road_live if a.get("average_cadence")],
+                mode="markers",
+                name="야외 도로",
+                marker=dict(size=10, color="#38bdf8"),
             ))
-            fig_lr.add_hline(y=50.0, line_dash="dash", line_color="#22c55e", annotation_text="50.0% 대칭 기준선")
-            fig_lr.update_layout(
-                title="좌/우 페달링 밸런스 추이 (왼발 %)",
-                xaxis_title="날짜", yaxis_title="왼발 비중 (%)",
+            fig_cad.add_trace(go.Scatter(
+                x=[a["average_cadence"] for a in ind_live if a.get("average_cadence")],
+                y=[a.get("weighted_average_watts") or a.get("average_watts") for a in ind_live if a.get("average_cadence")],
+                text=[f"{a['start_date_local'][:10]} {a['name']}" for a in ind_live if a.get("average_cadence")],
+                mode="markers",
+                name="실내 트레이너",
+                marker=dict(size=10, color="#a78bfa", symbol="diamond"),
+            ))
+            fig_cad.update_layout(
+                title="평균 케이던스(RPM) vs 정규화 파워(NP)",
+                xaxis_title="평균 케이던스 (RPM)", yaxis_title="NP (Watts)",
                 height=350, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
             )
-            st.plotly_chart(fig_lr, use_container_width=True)
+            st.plotly_chart(fig_cad, use_container_width=True)
 
-        # 4) Full 40-Ride Detailed Table
-        st.markdown(f"#### 4️⃣ 전체 가민 라이딩 상세 로그 (총 {len(garmin_raw_acts)}회)")
-        full_rows = []
-        for idx, a in enumerate(reversed(garmin_raw_acts), 1):
-            dist_km = (a.get("distance_m") or 0) / 1000.0
-            dur_m = (a.get("timer_time_s") or 0) / 60.0
-            spd = (a.get("avg_speed_ms") or 0) * 3.6
-            prof = a.get("sport_profile_name") or ""
-            wkt = f" [{a['workout_name']}]" if a.get("workout_name") else ""
-            full_rows.append({
-                "순번": len(garmin_raw_acts) - idx + 1,
-                "일시 (KST)": a.get("start_kst", "")[:16],
-                "구분 [워크아웃]": f"{prof}{wkt}",
-                "이동시간(분)": round(dur_m, 1),
-                "거리(km)": round(dist_km, 1),
-                "평균속도(km/h)": round(spd, 1),
-                "획득고도(m)": int(a.get("ascent_m") or 0),
-                "평균파워(W)": a.get("avg_power") or 0,
-                "NP(W)": a.get("np") or 0,
-                "최대파워(W)": a.get("max_power") or 0,
-                "IF": round(float(a.get("if") or 0), 2),
-                "TSS": round(float(a.get("tss") or 0), 1),
-                "평균/최대심박": f"{a.get('avg_hr') or '-'} / {a.get('max_hr') or '-'}",
-                "케이던스(rpm)": a.get("avg_cadence") or 0,
-                "효율(EF)": a.get("ef") or "-",
-                "디커플링(%)": a.get("decoupling_pct") if a.get("decoupling_pct") is not None else "-",
-                "스태미나(시작→종료)": f"{a.get('stamina_start')}→{a.get('stamina_end')}%" if a.get("stamina_end") is not None else "-",
-                "좌/우 밸런스": a.get("lr_str", "-"),
-            })
-        st.dataframe(pd.DataFrame(full_rows), use_container_width=True, hide_index=True)
+    st.divider()
+
+    # 3) Reference Baseline from the 40 Garmin .fit files (2026.09.01 ~ 10.27)
+    with st.expander("📋 [참고치] 2026.09.01 ~ 10.27 가민 .fit 원본 40회 정밀 분석 베이스라인 (피크 파워 커브 & 좌우 밸런스)", expanded=True):
+        st.caption("오늘 업로드하신 40개 원본 .fit 파일에서만 추출 가능한 초 단위 피크 파워 커브(MMP)와 양발 파워미터 좌/우 밸런스 참고 데이터입니다.")
+        if garmin_ref_acts:
+            col_ref1, col_ref2 = st.columns(2)
+            dur_keys = [
+                ("1초(Max)", "max_power"), ("5초", "mmp_5s"), ("15초", "mmp_15s"), ("30초", "mmp_30s"),
+                ("1분", "mmp_60s"), ("3분", "mmp_180s"), ("5분", "mmp_300s"), ("10분", "mmp_600s"),
+                ("20분", "mmp_1200s"), ("30분", "mmp_1800s"), ("60분", "mmp_3600s"),
+            ]
+            sept_acts = [a for a in garmin_ref_acts if a["date"].startswith("2026-09")]
+            oct_acts = [a for a in garmin_ref_acts if a["date"].startswith("2026-10")]
+            s_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in sept_acts]) for _, k in dur_keys]
+            o_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in oct_acts]) for _, k in dur_keys]
+
+            with col_ref1:
+                fig_mmp = go.Figure()
+                fig_mmp.add_trace(go.Scatter(
+                    x=[d[0] for d in dur_keys], y=s_peaks, mode="lines+markers",
+                    name="9월 최고 파워 (W)", line=dict(color="#38bdf8", width=3),
+                ))
+                fig_mmp.add_trace(go.Scatter(
+                    x=[d[0] for d in dur_keys], y=o_peaks, mode="lines+markers",
+                    name="10월 최고 파워 (W)", line=dict(color="#f43f5e", width=3, dash="dash"),
+                ))
+                fig_mmp.update_layout(
+                    title="[참고치] 구간별 피크 파워 커브 (1초 ~ 60분 MMP)",
+                    xaxis_title="지속 시간", yaxis_title="파워 (Watts)",
+                    height=340, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
+                )
+                st.plotly_chart(fig_mmp, use_container_width=True)
+
+            with col_ref2:
+                lr_acts = [a for a in garmin_ref_acts if a.get("left_pct") is not None]
+                fig_lr = go.Figure()
+                fig_lr.add_trace(go.Scatter(
+                    x=[a["date"] for a in lr_acts],
+                    y=[a["left_pct"] for a in lr_acts],
+                    mode="lines+markers",
+                    name="왼발 파워 비중 (%)",
+                    marker=dict(size=8, color="#38bdf8"),
+                    line=dict(color="#38bdf8", width=2),
+                ))
+                fig_lr.add_hline(y=50.0, line_dash="dash", line_color="#22c55e", annotation_text="50.0% 대칭 기준선")
+                fig_lr.update_layout(
+                    title="[참고치] 좌/우 페달링 밸런스 추이 (9월~10월)",
+                    xaxis_title="날짜", yaxis_title="왼발 비중 (%)",
+                    height=340, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
+                )
+                st.plotly_chart(fig_lr, use_container_width=True)
 
 
 # ----------------- TAB 3: TRAINING PLAN GENERATOR -----------------
@@ -708,14 +673,14 @@ with tab3:
 # ----------------- TAB 4: CHATBOT CONSULTATION -----------------
 with tab4:
     st.subheader("💬 AI 사이클링 코치 1:1 실시간 상담실")
-    st.caption("가민 엣지 1040의 40회 주행 기록, FTP(196W), 심박존(LTHR 161bpm), 좌우 밸런스 데이터를 모두 기억하고 상담합니다.")
+    st.caption("Strava 실시간 라이딩 기록과 가민 1040 정밀 분석 참고치(FTP 196W, LTHR 161bpm, 피크 파워, 좌우 밸런스)를 모두 반영해 상담합니다.")
 
     mem_data = load_memory()
     athlete_notes = mem_data.get("athlete_notes", [])
 
-    with st.expander("🧠 코치가 기억하고 있는 라이더 핵심 메모 (장기 기억)", expanded=False):
+    with st.expander("🧠 코치가 기억하고 있는 라이더 핵심 메모 (장기 기억 & FIT 참고치)", expanded=False):
         st.markdown(
-            "코치는 브라우저를 닫거나 다시 접속해도 아래 등록된 **가민 1040 분석 요약, 신체 지표, 목표**를 영구적으로 기억하고 상담에 반영합니다."
+            "코치는 브라우저를 닫거나 다시 접속해도 아래 등록된 **가민 1040 분석 참고치, 신체 지표, 목표**를 영구적으로 기억하고 상담에 반영합니다."
         )
         if athlete_notes:
             for idx, note in enumerate(athlete_notes):
@@ -765,9 +730,9 @@ with tab4:
             default_greeting = {
                 "role": "assistant",
                 "content": (
-                    f"안녕하세요, 라이더님! 🚴 **가민 Edge 1040** 40회 실측 라이딩 데이터(**2,061.1km / +18,105m**)가 연동된 AI 코치입니다.\n"
+                    f"안녕하세요, 라이더님! 🚴 **Strava 실시간 연동** 및 **가민 Edge 1040 정밀 분석 참고치**가 결합된 AI 코치입니다.\n"
                     f"현재 프로필은 **FTP {ftp_input}W ({w_per_kg} W/kg)**, **LTHR {lthr_input}bpm (Max {max_hr_input}bpm)**, 컨디션 폼(TSB)은 **{latest_pmc['tsb']:+.1f}**입니다.\n"
-                    f"궁금하신 훈련 루틴이나 컨디션 관리법을 편하게 물어보세요!"
+                    f"가민으로 라이딩을 마치시면 Strava를 통해 자동으로 최신 기록이 반영됩니다!"
                 ),
             }
             st.session_state["messages"] = [default_greeting]
@@ -793,7 +758,7 @@ with tab4:
         last_ride_summary = (
             f"{last_ride.get('name', '라이딩')} (날짜: {last_ride.get('start_date_local', '')[:10]}, "
             f"거리: {round(last_ride.get('distance', 0)/1000, 1)}km, "
-            f"NP: {round(last_ride.get('weighted_average_watts', 0))}W, "
+            f"NP: {round(last_ride.get('weighted_average_watts') or last_ride.get('average_watts') or 0)}W, "
             f"평균심박: {int(last_ride.get('average_heartrate') or 0)}bpm, TSS: {round(last_ride.get('tss', 0), 1)})"
             if last_ride else "기록 없음"
         )
@@ -812,7 +777,7 @@ with tab4:
 
         with chat_container:
             with st.chat_message("assistant"):
-                with st.spinner("코치가 가민 1040 실측 데이터와 장기 기억을 종합 분석 중입니다..."):
+                with st.spinner("코치가 Strava 실시간 데이터와 가민 참고치를 종합 분석 중입니다..."):
                     answer = coach_agent.consult(
                         user_message=query,
                         chat_history=st.session_state["messages"][:-1],

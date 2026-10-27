@@ -1,0 +1,49 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # Run every 6 hours every day (UTC) to prevent Streamlit Cloud sleep mode
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping-streamlit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Visit Streamlit App & Wake If Sleeping
+        run: |
+          python - << 'EOF'
+          from playwright.sync_api import sync_playwright
+
+          APP_URL = "https://cycling-ai-coach-gdo9hvuz35jwgbmbdjddnk.streamlit.app/"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              print(f"Visiting {APP_URL} ...")
+              page.goto(APP_URL, wait_until="networkidle", timeout=60000)
+              page.wait_for_timeout(5000)
+
+              # If Streamlit shows the sleep wake-up button, click it
+              wake_btn = page.locator("button:has-text('Yes, get this app back up')")
+              if wake_btn.count() > 0:
+                  print("App was sleeping! Clicking wake-up button...")
+                  wake_btn.first.click()
+                  page.wait_for_timeout(15000)
+              else:
+                  print("App is awake and active!")
+
+              print("Page title:", page.title())
+              browser.close()
+          EOF

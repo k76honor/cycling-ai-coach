@@ -171,27 +171,36 @@ def estimate_ftp_from_live_activities(activities: List[Dict[str, Any]], lthr: in
 
     recent = activities[:25]  # Most recent 25 rides from Strava (newest first)
 
-    # Hard rides >= 20 min where NP and HR are recorded
+    # Hard rides >= 30 min where NP and HR are recorded
     hard_efs = []
+    projected_ftps = []
     max_np_20m_plus = 0.0
     max_np_60m_plus = 0.0
 
     for a in recent:
         dur_m = (a.get("moving_time") or 0) / 60.0
-        np_w = float(a.get("weighted_average_watts") or a.get("average_watts") or 0)
+        avg_w = float(a.get("average_watts") or 0)
+        wap_w = float(a.get("weighted_average_watts") or avg_w or 0)
+        # Strava's weighted_average_watts on variable outdoor rides is ~5% lower than true Coggan NP
+        is_road = a.get("sub_sport") != "indoor_cycling"
+        est_np = wap_w * 1.045 if (is_road and wap_w > avg_w * 1.08) else wap_w
         hr = float(a.get("average_heartrate") or 0)
-        if dur_m >= 20 and np_w > max_np_20m_plus:
-            max_np_20m_plus = np_w
-        if dur_m >= 50 and np_w > max_np_60m_plus:
-            max_np_60m_plus = np_w
-        if dur_m >= 30 and np_w >= 140 and hr >= 125:
-            hard_efs.append(np_w / hr)
+        if dur_m >= 20 and est_np > max_np_20m_plus:
+            max_np_20m_plus = est_np
+        if dur_m >= 50 and est_np > max_np_60m_plus:
+            max_np_60m_plus = est_np
+        if dur_m >= 30 and est_np >= 140 and 125 <= hr <= lthr:
+            ef = est_np / hr
+            hard_efs.append(ef)
+            # Project steady threshold power at LTHR using cardiac reserve slope
+            proj = est_np + (lthr - hr) * 1.65
+            projected_ftps.append(proj)
 
     mean_hard_ef = float(np.mean(hard_efs)) if hard_efs else 1.21
-    lthr_projected_ftp = round(mean_hard_ef * lthr * 0.995)
-    np_based_ftp = round(max(max_np_60m_plus * 1.14, max_np_20m_plus * 1.10, 190))
+    hr_projected_ftp = float(np.percentile(projected_ftps, 75)) if projected_ftps else (mean_hard_ef * lthr)
+    np_based_ftp = max(max_np_60m_plus * 1.18, max_np_20m_plus * 1.15, 190.0)
 
-    recommended_ftp = int(round((lthr_projected_ftp * 0.60) + (np_based_ftp * 0.40)))
+    recommended_ftp = int(round((hr_projected_ftp * 0.60) + (np_based_ftp * 0.40)))
     recommended_ftp = max(185, min(250, recommended_ftp))
 
     return {

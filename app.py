@@ -27,6 +27,7 @@ from strava_client import StravaClient
 from garmin_loader import (
     load_garmin_raw_activities,
     convert_garmin_to_dashboard_activities,
+    estimate_dynamic_ftp,
 )
 from power_metrics import (
     get_power_zones,
@@ -143,6 +144,25 @@ w_per_kg = round(ftp_input / max(1.0, weight_input), 2)
 st.sidebar.caption(
     f"⚡ **체중당 FTP**: `{w_per_kg} W/kg` | ❤️ **LTHR**: `{lthr_input} bpm` (Max `{max_hr_input}`)"
 )
+
+# Pre-load garmin activities so we can show dynamic FTP estimation in sidebar
+_init_garmin_acts = load_garmin_raw_activities()
+dyn_est = estimate_dynamic_ftp(_init_garmin_acts, lthr=lthr_input)
+st.sidebar.info(
+    f"🤖 **최근 주행 기반 동적 산출**\n"
+    f"• 권장 실전 FTP: **`{dyn_est['recommended_ftp']} W`** (잠재 `{dyn_est['potential_max_ftp']} W`)\n"
+    f"• 가민 최근 감지: `{dyn_est['latest_garmin_ftp']} W` (최고 `{dyn_est['max_garmin_ftp']} W`)\n"
+    f"• 최근 기록 체중: `{dyn_est['latest_weight']} kg`"
+)
+if st.sidebar.button("🔄 최신 주행 분석값(FTP·체중) 자동 적용", use_container_width=True):
+    update_athlete_profile(
+        ftp=dyn_est["recommended_ftp"],
+        weight_kg=dyn_est["latest_weight"],
+        max_hr=max_hr_input,
+        lthr=lthr_input,
+        rest_hr=rest_hr_input,
+    )
+    st.rerun()
 
 st.sidebar.divider()
 

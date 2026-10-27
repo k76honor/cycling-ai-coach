@@ -90,14 +90,17 @@ def update_athlete_profile(
     if rest_hr is not None:
         prof["rest_hr"] = int(rest_hr)
     mem["profile"] = prof
-    save_memory(mem)
+    save_memory(mem, sync_github=True)
 
 
-def save_memory(data: Dict[str, Any]) -> None:
-    """Saves memory data to JSON file."""
+def save_memory(data: Dict[str, Any], sync_github: bool = False) -> None:
+    """Saves memory data to JSON file (and syncs to GitHub if configured when profile/notes change)."""
     try:
         data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         MEMORY_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        if sync_github:
+            from garmin_loader import sync_file_to_github_if_configured
+            sync_file_to_github_if_configured(MEMORY_FILE, "Auto-sync updated athlete profile & notes")
     except Exception as e:
         print(f"Error saving memory: {e}")
 

@@ -1,19 +1,65 @@
 """
-Garmin Edge 1040 FIT Data Loader & Parser
-Loads embedded 40 Garmin activities (garmin_activities.json) and supports real-time .fit file upload parsing.
+Garmin Edge 1040 FIT Data Loader, Auto-Persister & Dynamic FTP Estimator
+Loads embedded Garmin activities (garmin_activities.json), persists newly uploaded .fit files,
+and dynamically estimates the athlete's evolving FTP from recent power & heart-rate data.
 """
 
+import base64
 import io
 import json
+import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 import numpy as np
+import requests
 
 from power_metrics import calculate_intensity_factor, calculate_tss
 
 KST = timezone(timedelta(hours=9))
 GARMIN_JSON_PATH = Path(__file__).resolve().parent / "garmin_activities.json"
+
+
+def sync_file_to_github_if_configured(file_path: Path, commit_message: str) -> bool:
+    """
+    If GITHUB_TOKEN is set in Streamlit Secrets or environment variables,
+    automatically commits the updated JSON file back to k76honor/cycling-ai-coach on GitHub
+    so changes survive even full cloud container rebuilds.
+    """
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and "GITHUB_TOKEN" in st.secrets:
+                token = str(st.secrets["GITHUB_TOKEN"])
+        except Exception:
+            pass
+    if not token or not file_path.exists():
+        return False
+
+    repo = os.getenv("GITHUB_REPO", "k76honor/cycling-ai-coach")
+    rel_name = file_path.name
+    api_url = f"https://api.github.com/repos/{repo}/contents/{rel_name}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    try:
+        get_resp = requests.get(api_url, headers=headers, timeout=8)
+        sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
+        content_b64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        payload = {
+            "message": commit_message,
+            "content": content_b64,
+            "branch": "main",
+        }
+        if sha:
+            payload["sha"] = sha
+        put_resp = requests.put(api_url, headers=headers, json=payload, timeout=10)
+        return put_resp.status_code in (200, 201)
+    except Exception as e:
+        print(f"GitHub auto-sync skipped: {e}")
+        return False
 
 
 def _get_val(frame, name: str, default=None):
@@ -183,23 +229,27 @@ def parse_uploaded_fit_bytes(file_bytes: bytes, filename: str) -> Optional[Dict[
 def load_garmin_raw_activities(uploaded_files: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
     """
     Loads the embedded Garmin Edge 1040 activities and merges any newly uploaded .fit files.
-    Returns chronological list (oldest to newest).
+    Automatically saves newly uploaded activities to garmin_activities.json!
     """
     raw_list: List[Dict[str, Any]] = []
+    full_json_data: Dict[str, Any] = {}
     if GARMIN_JSON_PATH.exists():
         try:
-            data = json.loads(GARMIN_JSON_PATH.read_text(encoding="utf-8"))
-            raw_list = data.get("activities", [])
+            full_json_data = json.loads(GARMIN_JSON_PATH.read_text(encoding="utf-8"))
+            raw_list = full_json_data.get("activities", [])
         except Exception as e:
             print(f"Error reading garmin_activities.json: {e}")
 
     by_start = {a.get("start_kst", a.get("file")): a for a in raw_list}
+    added_new = False
 
     if uploaded_files:
         for uf in uploaded_files:
             parsed = parse_uploaded_fit_bytes(uf.getvalue(), uf.name)
             if parsed:
                 key = parsed.get("start_kst", parsed.get("file"))
+                if key not in by_start:
+                    added_new = True
                 by_start[key] = parsed
 
     merged = list(by_start.values())
@@ -219,7 +269,66 @@ def load_garmin_raw_activities(uploaded_files: Optional[List[Any]] = None) -> Li
             a["right_pct"] = None
             a["lr_str"] = "-"
 
+    if added_new:
+        try:
+            full_json_data["activities"] = merged
+            GARMIN_JSON_PATH.write_text(
+                json.dumps(full_json_data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            sync_file_to_github_if_configured(
+                GARMIN_JSON_PATH, f"Auto-append newly uploaded FIT activities (total: {len(merged)})"
+            )
+        except Exception as e:
+            print(f"Error persisting new FIT activities: {e}")
+
     return merged
+
+
+def estimate_dynamic_ftp(garmin_acts: List[Dict[str, Any]], lthr: int = 161) -> Dict[str, Any]:
+    """
+    Dynamically estimates the athlete's current FTP from the most recent 6 weeks of rides
+    by combining:
+    1. Recent Garmin FTP detections
+    2. Best 20-minute & 60-minute power curves (adjusted for sub-maximal endurance pacing)
+    3. Sub-maximal HR-to-Power efficiency at LTHR (e.g. 161 bpm)
+    """
+    if not garmin_acts:
+        return {"recommended_ftp": 196, "potential_max_ftp": 202, "latest_garmin_ftp": 189, "latest_weight": 64.5}
+
+    recent = garmin_acts[-20:]  # Last ~20 rides
+    latest_garmin_ftp = next((a["ftp"] for a in reversed(garmin_acts) if a.get("ftp")), 189)
+    max_garmin_ftp = max([a.get("ftp") or 0 for a in recent] or [189])
+    latest_weight = next((a["weight_kg"] for a in reversed(garmin_acts) if a.get("weight_kg")), 64.5)
+
+    # Best 20m and 60m MMP across recent rides
+    best_20m = max([(a.get("mmp", {}).get("mmp_1200s") or 0) for a in garmin_acts] or [189.0])
+    best_60m = max([(a.get("mmp", {}).get("mmp_3600s") or 0) for a in garmin_acts] or [159.1])
+
+    # High-intensity efficiency (EF = NP / avg_hr) on hard rides (NP >= 145W, avg_hr >= 128)
+    hard_efs = [
+        (a["np"] / a["avg_hr"])
+        for a in recent
+        if a.get("np") and a.get("avg_hr") and a["np"] >= 145 and a["avg_hr"] >= 128
+    ]
+    mean_hard_ef = float(np.mean(hard_efs)) if hard_efs else 1.21
+
+    # Power projected at LTHR (with 0.98 steady-state conversion factor)
+    lthr_projected_ftp = round(mean_hard_ef * lthr * 0.995)
+    mmp_based_ftp = round(max(best_20m * 1.03, max_garmin_ftp * 1.02))
+
+    recommended_ftp = int(round((lthr_projected_ftp * 0.55) + (mmp_based_ftp * 0.45)))
+    recommended_ftp = max(max_garmin_ftp, min(230, recommended_ftp))
+    potential_max_ftp = recommended_ftp + 6
+
+    return {
+        "recommended_ftp": recommended_ftp,
+        "potential_max_ftp": potential_max_ftp,
+        "latest_garmin_ftp": latest_garmin_ftp,
+        "max_garmin_ftp": max_garmin_ftp,
+        "latest_weight": float(latest_weight),
+        "best_20m_w": best_20m,
+        "best_60m_w": best_60m,
+    }
 
 
 def convert_garmin_to_dashboard_activities(

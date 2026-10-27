@@ -743,16 +743,94 @@ with tab4:
         for msg in st.session_state["messages"]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                if msg.get("images"):
+                    img_cols = st.columns(min(3, len(msg["images"])))
+                    for idx_img, img_bytes in enumerate(msg["images"]):
+                        img_cols[idx_img % len(img_cols)].image(img_bytes, use_container_width=True)
 
-    user_input = st.chat_input("코치에게 훈련 상담 질문을 입력하세요...")
-    query = quick_prompt or user_input
+    user_input = st.chat_input(
+        "질문 입력 또는 클립보드 이미지 붙여넣기(Ctrl+V) / 파일 첨부(+ 아이콘 또는 드래그)...",
+        accept_file="multiple",
+        file_type=["png", "jpg", "jpeg", "webp", "gif", "pdf", "csv", "fit", "txt", "json"],
+    )
 
-    if query:
-        st.session_state["messages"].append({"role": "user", "content": query})
-        append_chat_message("user", query)
+    query_text = None
+    uploaded_chat_files = []
+    if quick_prompt:
+        query_text = quick_prompt
+    elif user_input is not None:
+        if isinstance(user_input, str):
+            query_text = user_input
+        else:
+            query_text = getattr(user_input, "text", "") or ""
+            uploaded_chat_files = list(getattr(user_input, "files", []) or [])
+            if not query_text.strip() and uploaded_chat_files:
+                query_text = "첨부한 이미지/파일을 사이클링 코치 관점에서 정밀 분석해 주세요."
+
+    if query_text or uploaded_chat_files:
+        attachments_payload = []
+        preview_images = []
+        attached_names = []
+
+        for uf in uploaded_chat_files:
+            fname = getattr(uf, "name", "attachment")
+            ftype = (getattr(uf, "type", "") or "").lower()
+            raw_bytes = uf.getvalue()
+            attached_names.append(fname)
+            lower_name = fname.lower()
+
+            if lower_name.endswith(".fit"):
+                parsed_fit = parse_uploaded_fit_bytes(raw_bytes, filename=fname, ftp=float(ftp_input))
+                if parsed_fit:
+                    fit_summary = (
+                        f"• FIT 파일 [{fname}]: 날짜={parsed_fit.get('start_date_local', '')[:10]}, "
+                        f"거리={round(parsed_fit.get('distance', 0)/1000, 2)}km, "
+                        f"이동시간={round(parsed_fit.get('moving_time', 0)/60, 1)}분, "
+                        f"획득고도={parsed_fit.get('total_elevation_gain', 0)}m, "
+                        f"평균파워={parsed_fit.get('average_watts', 0)}W, NP={parsed_fit.get('weighted_average_watts', 0)}W, "
+                        f"최대파워={parsed_fit.get('max_watts', 0)}W, 평균심박={parsed_fit.get('average_heartrate', 0)}bpm, "
+                        f"최대심박={parsed_fit.get('max_heartrate', 0)}bpm, 케이던스={parsed_fit.get('average_cadence', 0)}rpm, "
+                        f"좌우밸런스(왼발)={parsed_fit.get('left_balance', 'N/A')}%, "
+                        f"토크효율(L/R)={parsed_fit.get('left_torque_eff', 'N/A')}/{parsed_fit.get('right_torque_eff', 'N/A')}%, "
+                        f"페달스무스니스(L/R)={parsed_fit.get('left_smoothness', 'N/A')}/{parsed_fit.get('right_smoothness', 'N/A')}%, "
+                        f"스태미나(시작→종료)={parsed_fit.get('stamina_start', 'N/A')}→{parsed_fit.get('stamina_end', 'N/A')}%, "
+                        f"피크파워(MMP)={parsed_fit.get('peak_powers', {})}"
+                    )
+                    attachments_payload.append({"name": fname, "text_summary": fit_summary})
+                else:
+                    attachments_payload.append({"name": fname, "text_summary": f"• FIT 파일 [{fname}]: 파싱 실패"})
+            elif any(lower_name.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]) or ftype.startswith("image/"):
+                mime = ftype if ftype.startswith("image/") else "image/png"
+                attachments_payload.append({"name": fname, "mime_type": mime, "data": raw_bytes})
+                preview_images.append(raw_bytes)
+            elif lower_name.endswith(".pdf") or ftype == "application/pdf":
+                attachments_payload.append({"name": fname, "mime_type": "application/pdf", "data": raw_bytes})
+            else:
+                try:
+                    txt_content = raw_bytes.decode("utf-8", errors="replace")[:8000]
+                    attachments_payload.append(
+                        {"name": fname, "text_summary": f"• 파일 [{fname}] 내용 발췌:\n```\n{txt_content}\n```"}
+                    )
+                except Exception:
+                    pass
+
+        display_query = query_text
+        if attached_names:
+            display_query = f"{query_text}\n\n📎 *첨부 파일: {', '.join(attached_names)}*"
+
+        msg_entry = {"role": "user", "content": display_query}
+        if preview_images:
+            msg_entry["images"] = preview_images
+        st.session_state["messages"].append(msg_entry)
+        append_chat_message("user", display_query)
+
         with chat_container:
             with st.chat_message("user"):
-                st.markdown(query)
+                st.markdown(display_query)
+                if preview_images:
+                    img_cols = st.columns(min(3, len(preview_images)))
+                    for idx_img, img_bytes in enumerate(preview_images):
+                        img_cols[idx_img % len(img_cols)].image(img_bytes, use_container_width=True)
 
         last_ride = activities[0] if activities else {}
         last_ride_summary = (
@@ -777,14 +855,19 @@ with tab4:
 
         with chat_container:
             with st.chat_message("assistant"):
-                with st.spinner("코치가 Strava 실시간 데이터와 가민 참고치를 종합 분석 중입니다..."):
+                with st.spinner("코치가 이미지/첨부파일 및 Strava·가민 데이터를 종합 분석 중입니다..."):
+                    clean_history = [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state["messages"][:-1]
+                    ]
                     answer = coach_agent.consult(
-                        user_message=query,
-                        chat_history=st.session_state["messages"][:-1],
+                        user_message=query_text,
+                        chat_history=clean_history,
                         athlete_context=athlete_context,
+                        attachments=attachments_payload,
                     )
                     st.markdown(answer)
                     st.session_state["messages"].append({"role": "assistant", "content": answer})
                     append_chat_message("assistant", answer)
-                    auto_extract_athlete_insight(coach_agent, query, answer)
+                    auto_extract_athlete_insight(coach_agent, display_query, answer)
         st.rerun()

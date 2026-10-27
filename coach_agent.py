@@ -40,9 +40,13 @@ class CyclingCoachAgent:
         return self.client is not None
 
     def _call_gemini(
-        self, prompt: str, system_instruction: str = COACH_SYSTEM_PROMPT, temperature: float = 0.5
+        self,
+        prompt: str,
+        system_instruction: str = COACH_SYSTEM_PROMPT,
+        temperature: float = 0.5,
+        attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[str]:
-        """Calls Gemini API with automatic model fallback (3.5-flash-lite, 3.8-flash, etc.)."""
+        """Calls Gemini API with automatic model fallback and optional multimodal attachments (images/PDF/files)."""
         if not self.is_available():
             return None
 
@@ -51,11 +55,29 @@ class CyclingCoachAgent:
             if m not in candidate_models:
                 candidate_models.append(m)
 
+        contents_payload: Any = prompt
+        if attachments:
+            try:
+                from google.genai import types
+                parts: List[Any] = [prompt]
+                for att in attachments:
+                    if att.get("data") and att.get("mime_type"):
+                        parts.append(
+                            types.Part.from_bytes(
+                                data=att["data"],
+                                mime_type=att["mime_type"],
+                            )
+                        )
+                contents_payload = parts
+            except Exception as e:
+                print(f"Failed to build multimodal parts: {e}")
+                contents_payload = prompt
+
         for model in candidate_models:
             try:
                 resp = self.client.models.generate_content(
                     model=model,
-                    contents=prompt,
+                    contents=contents_payload,
                     config={
                         "system_instruction": system_instruction,
                         "temperature": temperature,
@@ -225,13 +247,16 @@ class CyclingCoachAgent:
         user_message: str,
         chat_history: List[Dict[str, str]],
         athlete_context: Dict[str, Any],
+        attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """
         Interactive cycling consultation chatbot.
-        Answers user training/fatigue/gear/nutrition questions with live athlete context.
+        Answers user training/fatigue/gear/nutrition questions with live athlete context and multimodal attachments.
         """
-        ftp = athlete_context.get("ftp", 230)
-        weight_kg = athlete_context.get("weight_kg", 68.0)
+        ftp = athlete_context.get("ftp", 196)
+        weight_kg = athlete_context.get("weight_kg", 64.5)
+        lthr = athlete_context.get("lthr", 161)
+        max_hr = athlete_context.get("max_hr", 184)
         ctl = athlete_context.get("ctl", 50.0)
         atl = athlete_context.get("atl", 55.0)
         tsb = athlete_context.get("tsb", -5.0)
@@ -239,19 +264,29 @@ class CyclingCoachAgent:
         athlete_notes = athlete_context.get("athlete_notes", [])
         notes_str = "\n".join([f"- {n}" for n in athlete_notes]) if athlete_notes else "- 특이사항 없음"
 
+        extra_file_context = ""
+        if attachments:
+            text_extracts = [a["text_summary"] for a in attachments if a.get("text_summary")]
+            binary_names = [a["name"] for a in attachments if a.get("data")]
+            if binary_names:
+                extra_file_context += f"\n[첨부된 이미지/문서 파일 ({len(binary_names)}개): {', '.join(binary_names)}]\n- 첨부된 이미지(가민/스트라바 캡처, 파워/심박 그래프, 자세/장비 사진 등) 또는 문서를 시각적으로 정밀 분석하여 답변에 반영하세요.\n"
+            if text_extracts:
+                extra_file_context += "\n[첨부된 데이터 파일(.fit/CSV/JSON) 분석 내용]\n" + "\n".join(text_extracts) + "\n"
+
         context_prompt = f"""
 [코치가 기억하고 있는 라이더 핵심 메모 (장기 기억)]
 {notes_str}
 
 [현재 상담 라이더의 실시간 데이터]
 - FTP: {ftp}W (체중 {weight_kg}kg, W/kg: {round(ftp/max(1.0, weight_kg), 2)})
+- 심박 기준: LTHR {lthr}bpm / 최대심박 {max_hr}bpm
 - 현재 PMC 지표: CTL(체력)={ctl:.1f}, ATL(피로도)={atl:.1f}, TSB(컨디션)={tsb:+.1f}
 - 가장 최근 라이딩: {recent_ride}
-
+{extra_file_context}
 [라이더의 질문]
 "{user_message}"
 
-코치님은 위 장기 기억(선수의 목표, 부상 이력, 특이사항)과 현재 실시간 파워 데이터를 항상 인지하고, 전담 코치로서 맥락이 이어지는 깊이 있는 맞춤 조언을 제공해주세요.
+코치님은 위 장기 기억(선수의 목표, 부상 이력, 특이사항), 실시간 파워 데이터, 그리고 첨부된 이미지/파일이 있다면 그 내용을 모두 종합하여 전담 코치로서 맥락이 이어지는 깊이 있는 맞춤 조언을 제공해주세요.
 """
 
         # Build contents with chat history
@@ -263,7 +298,7 @@ class CyclingCoachAgent:
         messages.append(f"USER: {context_prompt}")
         full_input = "\n\n".join(messages)
 
-        gemini_reply = self._call_gemini(full_input, temperature=0.5)
+        gemini_reply = self._call_gemini(full_input, temperature=0.5, attachments=attachments)
         if gemini_reply:
             return gemini_reply
 

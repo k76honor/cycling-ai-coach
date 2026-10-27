@@ -1,18 +1,30 @@
 """
 Athlete Memory and Chat History Manager
-Provides persistent storage for conversation history and coach notes across sessions.
+Provides persistent storage for conversation history, physiological profile, and coach notes across sessions.
 """
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 MEMORY_FILE = Path(__file__).resolve().parent / "athlete_memory.json"
 
+DEFAULT_PROFILE = {
+    "ftp": 196,
+    "weight_kg": 64.5,
+    "max_hr": 184,
+    "lthr": 161,
+    "rest_hr": 49,
+}
+
 DEFAULT_NOTES = [
-    "목표: FTP 향상 및 그란폰도 완주",
-    "신체 특이사항: 무릎 통증 예방을 위해 가벼운 기어비 및 케이던스 85rpm 이상 유지 권장",
+    "기기 및 볼륨: Garmin Edge 1040 Asia (2026.09.01~10.27 8주간 총 40회, 2,061.1km, 누적 획득고도 18,105m, 총 4,836.5 TSS)",
+    "신체 및 역치 프로필: 만 50세(168cm), 체중 66.6kg -> 64.5kg(-2.1kg 감량), 실전 권장 FTP 196W(3.04 W/kg, 잠재 올아웃 200~205W), LTHR 161bpm, 최대심박 184bpm(9/5 실측 183bpm), 안정시 심박 49bpm",
+    "피크 파워 커브(MMP): 1초 737W(11.07W/kg), 5초 691.6W(10.38W/kg), 1분 353.1W(5.30W/kg), 5분 237.6W(3.57W/kg), 20분 189.0W(NP 202.7W), 60분 159.1W(NP 175.7W)",
+    "유산소 효율(EF = NP/HR) 진화: 야외 도로 EF가 9월 초 1.08~1.17에서 10월 중하순 1.19~1.26(10/18 NP 167W @ 139bpm, 10/25 NP 162W @ 129bpm)으로 대폭 향상",
+    "바이오메카닉스 체크: 9월 좌우 페달링 밸런스 50:50 대칭에서 10월 산악 주행 누적 후 왼발 비중 증가(51.5% -> 10/25 53.5% L / 46.5% R), 우측 클릿 및 둔근 스트레칭 권장",
+    "케이던스 및 무릎 보호: 실내 평균 82.9rpm vs 야외 도로 평균 70.0rpm (장거리 산악 업힐 시 62~65rpm으로 저하되므로 업힐 72~78rpm, 평지 85rpm+ 유지 권장)",
 ]
 
 
@@ -20,7 +32,7 @@ def load_memory() -> Dict[str, Any]:
     """Loads persistent athlete memory, profile, and messages from disk."""
     if not MEMORY_FILE.exists():
         initial_data = {
-            "profile": {"ftp": 230, "weight_kg": 68.0},
+            "profile": DEFAULT_PROFILE.copy(),
             "athlete_notes": DEFAULT_NOTES.copy(),
             "messages": [],
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -30,8 +42,11 @@ def load_memory() -> Dict[str, Any]:
 
     try:
         data = json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
-        if "profile" not in data:
-            data["profile"] = {"ftp": 230, "weight_kg": 68.0}
+        if "profile" not in data or not isinstance(data["profile"], dict):
+            data["profile"] = DEFAULT_PROFILE.copy()
+        else:
+            for k, v in DEFAULT_PROFILE.items():
+                data["profile"].setdefault(k, v)
         if "athlete_notes" not in data:
             data["athlete_notes"] = DEFAULT_NOTES.copy()
         if "messages" not in data:
@@ -40,7 +55,7 @@ def load_memory() -> Dict[str, Any]:
     except Exception as e:
         print(f"Error loading memory: {e}")
         return {
-            "profile": {"ftp": 230, "weight_kg": 68.0},
+            "profile": DEFAULT_PROFILE.copy(),
             "athlete_notes": DEFAULT_NOTES.copy(),
             "messages": [],
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -48,18 +63,33 @@ def load_memory() -> Dict[str, Any]:
 
 
 def get_athlete_profile() -> Dict[str, Any]:
-    """Retrieves saved athlete profile (FTP, Weight)."""
+    """Retrieves saved athlete profile (FTP, Weight, Max HR, LTHR, Rest HR)."""
     mem = load_memory()
-    return mem.get("profile", {"ftp": 230, "weight_kg": 68.0})
+    prof = mem.get("profile", DEFAULT_PROFILE.copy())
+    for k, v in DEFAULT_PROFILE.items():
+        prof.setdefault(k, v)
+    return prof
 
 
-def update_athlete_profile(ftp: int, weight_kg: float) -> None:
-    """Updates and saves athlete profile (FTP, Weight) to persistent storage."""
+def update_athlete_profile(
+    ftp: int,
+    weight_kg: float,
+    max_hr: Optional[int] = None,
+    lthr: Optional[int] = None,
+    rest_hr: Optional[int] = None,
+) -> None:
+    """Updates and saves athlete profile to persistent storage."""
     mem = load_memory()
-    mem["profile"] = {
-        "ftp": int(ftp),
-        "weight_kg": float(weight_kg),
-    }
+    prof = mem.get("profile", DEFAULT_PROFILE.copy())
+    prof["ftp"] = int(ftp)
+    prof["weight_kg"] = float(weight_kg)
+    if max_hr is not None:
+        prof["max_hr"] = int(max_hr)
+    if lthr is not None:
+        prof["lthr"] = int(lthr)
+    if rest_hr is not None:
+        prof["rest_hr"] = int(rest_hr)
+    mem["profile"] = prof
     save_memory(mem)
 
 
@@ -99,7 +129,6 @@ def append_chat_message(role: str, content: str) -> None:
         "content": content,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     })
-    # Keep up to 60 messages to manage context
     if len(mem["messages"]) > 60:
         mem["messages"] = mem["messages"][-60:]
     save_memory(mem)
@@ -115,7 +144,7 @@ def clear_chat_history() -> None:
 def auto_extract_athlete_insight(agent, user_message: str, bot_response: str) -> None:
     """
     Uses Gemini to extract important permanent insights about the athlete
-    (e.g. newly stated injury, target race date, equipment change) and adds to notes.
+    and adds to notes.
     """
     if not agent or not agent.is_available():
         return
@@ -127,17 +156,14 @@ def auto_extract_athlete_insight(agent, user_message: str, bot_response: str) ->
 [사용자 질문]: {user_message}
 [코치 답변]: {bot_response}
 
-만약 기억해둘 만한 핵심 정보가 있다면 한국어로 1줄(30자 내외)의 간결한 메모 문장으로만 출력하세요. (예: "2026년 5월 설악 그란폰도 208km 완주 목표", "안장 높이 조절 후 햄스트링 당김 증상 있음")
+만약 기억해둘 만한 핵심 정보가 있다면 한국어로 1줄(40자 내외)의 간결한 메모 문장으로만 출력하세요.
 기억해둘 만한 새로운 사실이 없거나 단순 일상 잡담/일회성 계산 질문이라면 아무것도 쓰지 말고 오직 'NONE'이라고만 답하세요.
 """
     try:
-        resp = agent.client.models.generate_content(
-            model=agent.model_name,
-            contents=prompt,
-            config={"temperature": 0.1},
-        )
-        insight = resp.text.strip()
-        if insight and insight != "NONE" and "NONE" not in insight and len(insight) > 4:
-            add_athlete_note(insight)
+        resp = agent._call_gemini(prompt, temperature=0.1)
+        if resp:
+            insight = resp.strip()
+            if insight and insight != "NONE" and "NONE" not in insight and len(insight) > 4:
+                add_athlete_note(insight)
     except Exception as e:
         print(f"Auto-extract insight error: {e}")

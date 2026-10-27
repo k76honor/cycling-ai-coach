@@ -713,14 +713,14 @@ with tab4:
     st.write("💡 **자주 묻는 추천 질문:**")
     q_col1, q_col2, q_col3, q_col4 = st.columns(4)
     quick_prompt = None
-    if q_col1.button("🦵 10월 왼발 밸런스(53.5%) 교정법", use_container_width=True):
-        quick_prompt = "9월에는 좌우 페달링 밸런스가 50:50이었는데 10월 야외 산악 라이딩에서 왼발 비중이 52~53.5%로 높아졌습니다. 클릿과 스트레칭을 어떻게 점검하면 좋을까요?"
-    if q_col2.button("📈 FTP 196W → 210W 돌파 루틴", use_container_width=True):
-        quick_prompt = "현재 FTP 196W(3.04 W/kg)에서 210W(3.25 W/kg)로 올리기 위해 평일 인도어 워크아웃과 주말 라이딩을 어떻게 구성할까요?"
-    if q_col3.button("⛰️ 장거리 업힐 케이던스 & 스태미나", use_container_width=True):
-        quick_prompt = "획득고도 2,000m 이상 장거리 산악 라이딩에서 평균 케이던스가 62~65rpm으로 떨어지고 후반 스태미나가 30% 이하로 고갈되는데 개선 요령을 알려주세요."
-    if q_col4.button("❤️ LTHR 161bpm 기준 인도어 심박 관리", use_container_width=True):
-        quick_prompt = "젖산역치 심박수(LTHR) 161bpm, 최대심박수 184bpm 기준으로 실내 기초체력(Z2)과 한계치(Z4) 워크아웃을 탈 때 적정 심박 범위를 알려주세요."
+    if q_col1.button("📈 FTP 196W → 210W 돌파 (실전 루틴)", use_container_width=True):
+        quick_prompt = "불필요한 150bpm 심박 제한 없이, 실제 LTHR 161bpm(최대 184bpm)과 현재 FTP 196W를 기준으로 FTP를 210W 이상으로 끌어올릴 수 있는 평일 인도어/단거리 인터벌과 주말 라이딩 구성을 짜주세요."
+    if q_col2.button("🦵 클릿 최후방 & 좌측 오금 당김 교정", use_container_width=True):
+        quick_prompt = "현재 클릿을 신발 최후방으로 밀어둔 상태이고 10월 장거리 주행에서 왼발 비중(53~53.5%)이 높아지며 왼쪽 무릎 뒤(오금/슬와근)가 당겼습니다. 안장 높이와 페달링을 어떻게 교정할까요?"
+    if q_col3.button("💧 알닥톤 25mg & 장거리 혈압·수분 관리", use_container_width=True):
+        quick_prompt = "알닥톤 25mg 복용 중인데 90~100km 장거리 라이딩이나 고강도 훈련을 타면서 운동 후 이완기 혈압 반등(90mmHg+)과 탈수를 막으려면 수분·전해질 섭취와 쿨다운을 어떻게 해야 할까요?"
+    if q_col4.button("❤️ LTHR 161bpm 기준 파워·심박 매칭", use_container_width=True):
+        quick_prompt = "젖산역치 심박수(LTHR) 161bpm, 최대심박수 184bpm, FTP 196W 기준으로 Z2 지구력, Sweet Spot, Z4 역치 훈련 시 각각 적정 와트(W)와 심박수(bpm) 범위를 정리해 주세요."
 
     if "messages" not in st.session_state or not st.session_state["messages"]:
         saved_msgs = mem_data.get("messages", [])

@@ -47,7 +47,7 @@ class CyclingCoachAgent:
             return None
 
         candidate_models = [self.model_name]
-        for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]:
+        for m in ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash"]:
             if m not in candidate_models:
                 candidate_models.append(m)
 

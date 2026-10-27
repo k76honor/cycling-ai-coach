@@ -18,7 +18,7 @@ def get_setting(key: str, default: str = "") -> str:
 
 # Gemini API Configuration
 GEMINI_API_KEY = get_setting("GEMINI_API_KEY", "")
-GEMINI_MODEL = get_setting("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = get_setting("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 # Strava API Configuration
 STRAVA_CLIENT_ID = get_setting("STRAVA_CLIENT_ID", "")

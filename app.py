@@ -219,9 +219,9 @@ api_key_input = st.sidebar.text_input(
 model_name = st.sidebar.selectbox(
     "Gemini 모델",
     [
-        "gemini-2.5-flash (추천 / 고속·정밀)",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite (추천 ⭐ / 0.9초 초고속)",
+        "gemini-3.6-flash (정밀 심층 분석 / 4초)",
+        "gemini-3.5-flash (장문 훈련 플랜 특화)",
     ],
     index=0,
 )

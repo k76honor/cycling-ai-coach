@@ -27,11 +27,19 @@ from strava_client import StravaClient, estimate_ftp_from_live_activities
 from garmin_loader import (
     load_garmin_raw_activities,
     convert_garmin_to_dashboard_activities,
+    parse_uploaded_fit_bytes,
 )
 from power_metrics import (
     get_power_zones,
     calculate_pmc,
     interpret_tsb,
+    estimate_substrate_burn,
+    project_pmc_future,
+)
+from workout_builder import (
+    get_preset_workouts,
+    build_garmin_workout_fit_bytes,
+    build_zwift_zwo_xml,
 )
 from coach_agent import CyclingCoachAgent
 from memory_manager import (
@@ -150,7 +158,7 @@ st.sidebar.divider()
 st.sidebar.subheader("📡 데이터 소스 연동")
 data_options = [
     "🔗 Strava 실시간 자동 연동 (기본)",
-    "📋 가민 .fit 정밀 분석 참고치 (2026.09~10, 40회)",
+    "📋 가민 .fit 정밀 분석 데이터 (로컬/업로드 통합)",
 ]
 data_mode = st.sidebar.radio("데이터 수집 방식", data_options, index=0)
 
@@ -168,13 +176,20 @@ if data_mode.startswith("🔗"):
         s_client_secret = st.text_input("Client Secret", value=STRAVA_CLIENT_SECRET, type="password")
         s_refresh_token = st.text_input("Refresh Token", value=STRAVA_REFRESH_TOKEN, type="password")
 
+with st.sidebar.expander("📤 가민 Edge 1040 .fit 파일 추가 업로드", expanded=False):
+    uploaded_fit_files = st.file_uploader(
+        ".fit 원본 파일 업로드 (복수 선택 가능, GitHub 자동 동기화)",
+        type=["fit"],
+        accept_multiple_files=True,
+    )
+
 # ----------------- DATA PREPARATION -----------------
 @st.cache_data(ttl=300)
 def load_strava_activities(c_id: str, c_sec: str, r_tok: str, ftp: float):
     client = StravaClient(c_id, c_sec, r_tok)
     return client.get_activities(ftp=ftp, per_page=100)
 
-garmin_ref_acts = load_garmin_raw_activities()
+garmin_ref_acts = load_garmin_raw_activities(uploaded_files=uploaded_fit_files)
 
 if data_mode.startswith("🔗"):
     activities = load_strava_activities(
@@ -301,9 +316,10 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ----------------- TAB 1: PMC DASHBOARD -----------------
 with tab1:
-    st.subheader("📈 훈련 부하 및 컨디션 관리 차트 (PMC: Performance Management Chart)")
-    st.caption("파란선: 장기 체력(CTL, 42일) | 주황 점선: 단기 피로도(ATL, 7일) | 막대: 컨디션 폼(TSB = 전일 CTL - 전일 ATL)")
+    st.subheader("📈 훈련 부하 및 컨디션 관리 차트 (PMC: Performance Management Chart + 향후 7일 예측)")
+    st.caption("파란선: 장기 체력(CTL, 42일) | 주황 점선: 단기 피로도(ATL, 7일) | 막대: 컨디션 폼(TSB = 전일 CTL - 전일 ATL) | 연한 점선: 휴식 시 향후 7일 회복 궤적")
 
+    future_pmc_df = project_pmc_future(pmc_df, days=7, planned_daily_tss=0.0)
     fig_pmc = go.Figure()
     colors = ["#22c55e" if val >= 0 else "#ef4444" for val in pmc_df["tsb"]]
     fig_pmc.add_trace(
@@ -315,6 +331,17 @@ with tab1:
             opacity=0.65,
         )
     )
+    if not future_pmc_df.empty:
+        fut_colors = ["#86efac" if val >= 0 else "#fca5a5" for val in future_pmc_df["tsb"]]
+        fig_pmc.add_trace(
+            go.Bar(
+                x=future_pmc_df.index,
+                y=future_pmc_df["tsb"],
+                name="예측 TSB (향후 7일 휴식 가정)",
+                marker_color=fut_colors,
+                opacity=0.35,
+            )
+        )
     fig_pmc.add_trace(
         go.Scatter(
             x=pmc_df.index,
@@ -331,8 +358,28 @@ with tab1:
             line=dict(color="#f97316", width=2, dash="dot"),
         )
     )
+    if not future_pmc_df.empty:
+        proj_ctl_x = [pmc_df.index[-1]] + list(future_pmc_df.index)
+        proj_ctl_y = [float(pmc_df["ctl"].iloc[-1])] + list(future_pmc_df["ctl"])
+        proj_atl_y = [float(pmc_df["atl"].iloc[-1])] + list(future_pmc_df["atl"])
+        fig_pmc.add_trace(
+            go.Scatter(
+                x=proj_ctl_x,
+                y=proj_ctl_y,
+                name="예측 CTL (7일)",
+                line=dict(color="#7dd3fc", width=2, dash="dash"),
+            )
+        )
+        fig_pmc.add_trace(
+            go.Scatter(
+                x=proj_ctl_x,
+                y=proj_atl_y,
+                name="예측 ATL (7일)",
+                line=dict(color="#fdba74", width=2, dash="dashdot"),
+            )
+        )
     fig_pmc.update_layout(
-        height=370,
+        height=380,
         margin=dict(l=20, r=20, t=20, b=20),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         xaxis=dict(title="날짜", showgrid=True),
@@ -344,7 +391,11 @@ with tab1:
 
     col_diag_text, col_diag_btn = st.columns([4, 1])
     with col_diag_text:
-        st.info(f"**현재 상태 코치 한줄 진단**: {tsb_status['advice']}")
+        st.info(
+            f"**현재 상태 코치 한줄 진단**: {tsb_status['advice']}\n\n"
+            f"🔥 **FatMax 골든존 요약**: 파워 **`{round(ftp_input * 0.60)}~{round(ftp_input * 0.72)}W`** (스위트스팟 `{round(ftp_input * 0.65)}~{round(ftp_input * 0.70)}W`), "
+            f"심박수 **`{round(max_hr_input * 0.65)}~{round(max_hr_input * 0.75)}bpm`** (상한 캡 `{round(max_hr_input * 0.75) + 1}bpm` 미만)"
+        )
     with col_diag_btn:
         run_diag = st.button("🔍 AI 종합 진단 리포트 생성", use_container_width=True)
 
@@ -362,7 +413,7 @@ with tab1:
 
     col_pz, col_hrz = st.columns(2)
     with col_pz:
-        st.subheader(f"⚡ Coggan 7 파워존 (FTP {ftp_input}W 기준)")
+        st.subheader(f"⚡ Coggan 파워존 + FatMax (FTP {ftp_input}W 기준)")
         zones = get_power_zones(ftp_input)
         zone_data = []
         for k, v in zones.items():
@@ -376,14 +427,21 @@ with tab1:
         st.dataframe(pd.DataFrame(zone_data), use_container_width=True, hide_index=True)
 
     with col_hrz:
-        st.subheader(f"❤️ 심박수 훈련 존 (LTHR {lthr_input}bpm / Max {max_hr_input}bpm)")
+        st.subheader(f"❤️ 심박수 훈련 존 + FatMax (LTHR {lthr_input}bpm / Max {max_hr_input}bpm)")
         hr_zones_table = [
             {
                 "심박 존": "Zone 1 (회복 / 웜업)",
                 "%LTHR 기준": "< 81% LTHR",
                 "심박수 (%LTHR 추천)": f"~ {round(lthr_input * 0.81)} bpm",
                 "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.50)} ~ {round(max_hr_input * 0.60)} bpm",
-                "훈련 효과": "적극적 회복 및 혈류 촉진",
+                "훈련 효과": "적극적 회복 및 혈류 촉진 (쿨다운 125bpm 이하 필수)",
+            },
+            {
+                "심박 존": "🔥 FatMax 골든존 (지방연소 극대화)",
+                "%LTHR 기준": "75% ~ 85% LTHR",
+                "심박수 (%LTHR 추천)": f"{round(lthr_input * 0.75)} ~ {round(lthr_input * 0.85)} bpm",
+                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.65)} ~ {round(max_hr_input * 0.75)} bpm",
+                "훈련 효과": f"분당 지방 산화율 최고점 (상한 캡 {round(max_hr_input * 0.75) + 1}bpm 미만 유지)",
             },
             {
                 "심박 존": "Zone 2 (유산소 지구력)",
@@ -416,24 +474,31 @@ with tab1:
         ]
         st.dataframe(pd.DataFrame(hr_zones_table), use_container_width=True, hide_index=True)
 
-    st.subheader(f"🚴 실시간 연동 라이딩 활동 내역 (총 {len(activities)}회)")
+    st.subheader(f"🚴 실시간 연동 라이딩 활동 내역 및 지방·탄수화물 연소량 추정 (총 {len(activities)}회)")
     if activities:
         recent_table = []
         for act in activities:
+            avg_w = float(act.get("average_watts") or 0.0)
+            np_w = float(act.get("weighted_average_watts") or avg_w)
+            mov_s = float(act.get("moving_time") or 0.0)
+            if_val = float(act.get("intensity_factor") or (np_w / ftp_input if ftp_input > 0 else 0.0))
+            sub = estimate_substrate_burn(avg_watts=avg_w, duration_seconds=mov_s, intensity_factor=if_val)
             recent_table.append({
                 "날짜": act["start_date_local"][:16].replace("T", " "),
                 "라이딩명": act["name"],
                 "구분": "실내" if act.get("sub_sport") == "indoor_cycling" else "야외 도로",
                 "거리(km)": round(act["distance"] / 1000.0, 1),
-                "이동시간(분)": round(act["moving_time"] / 60.0, 1),
+                "이동시간(분)": round(mov_s / 60.0, 1),
                 "획득고도(m)": int(act.get("total_elevation_gain", 0)),
-                "평균 파워(W)": round(act.get("average_watts") or 0),
-                "NP(W)": round(act.get("weighted_average_watts") or act.get("average_watts") or 0),
+                "평균 파워(W)": round(avg_w),
+                "NP(W)": round(np_w),
                 "평균/최대 심박": f"{int(act.get('average_heartrate') or 0)} / {int(act.get('max_heartrate') or 0)}",
                 "케이던스": int(act.get("average_cadence") or 0),
                 "EF(효율)": act.get("ef") or "-",
-                "IF": round(act.get("intensity_factor", 0.0), 2),
+                "IF": round(if_val, 2),
                 "TSS": round(act.get("tss", 0.0), 1),
+                "소모열량(kcal)": sub["kcal"],
+                "🔥지방 / 🍚탄수(g)": f"🔥{sub['fat_g']}g ({sub['fat_pct']}%) / 🍚{sub['carb_g']}g",
             })
         st.dataframe(pd.DataFrame(recent_table), use_container_width=True, hide_index=True)
 
@@ -571,9 +636,9 @@ with tab2:
 
     st.divider()
 
-    # 3) Reference Baseline from the 40 Garmin .fit files (2026.09.01 ~ 10.27)
-    with st.expander("📋 [참고치] 2026.09.01 ~ 10.27 가민 .fit 원본 40회 정밀 분석 베이스라인 (피크 파워 커브 & 좌우 밸런스)", expanded=True):
-        st.caption("오늘 업로드하신 40개 원본 .fit 파일에서만 추출 가능한 초 단위 피크 파워 커브(MMP)와 양발 파워미터 좌/우 밸런스 참고 데이터입니다.")
+    # 3) Reference Baseline from Garmin .fit files
+    with st.expander(f"📋 [정밀 분석] 가민 .fit 원본 ({len(garmin_ref_acts)}회) 피크 파워 커브(MMP) & 양발 좌/우 밸런스", expanded=True):
+        st.caption("원본 .fit 파일에서만 추출 가능한 초 단위 피크 파워 커브(MMP)와 양발 파워미터 좌/우 밸런스 데이터입니다. (사이드바에서 새 .fit 파일을 업로드하면 즉시 반영됩니다)")
         if garmin_ref_acts:
             col_ref1, col_ref2 = st.columns(2)
             dur_keys = [
@@ -581,23 +646,33 @@ with tab2:
                 ("1분", "mmp_60s"), ("3분", "mmp_180s"), ("5분", "mmp_300s"), ("10분", "mmp_600s"),
                 ("20분", "mmp_1200s"), ("30분", "mmp_1800s"), ("60분", "mmp_3600s"),
             ]
-            sept_acts = [a for a in garmin_ref_acts if a["date"].startswith("2026-09")]
-            oct_acts = [a for a in garmin_ref_acts if a["date"].startswith("2026-10")]
-            s_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in sept_acts]) for _, k in dur_keys]
-            o_peaks = [max([(a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0 for a in oct_acts]) for _, k in dur_keys]
+            months = sorted({a["date"][:7] for a in garmin_ref_acts if a.get("date")})
+            if len(months) >= 2:
+                m_prev, m_curr = months[-2], months[-1]
+                prev_acts = [a for a in garmin_ref_acts if a["date"].startswith(m_prev)]
+                curr_acts = [a for a in garmin_ref_acts if a["date"].startswith(m_curr)]
+                label_prev, label_curr = f"{m_prev} 최고 파워 (W)", f"{m_curr} 최고 파워 (W)"
+            else:
+                half = max(1, len(garmin_ref_acts) // 2)
+                prev_acts = garmin_ref_acts[:half]
+                curr_acts = garmin_ref_acts[half:] or garmin_ref_acts
+                label_prev, label_curr = "전반기 최고 파워 (W)", "후반기 최고 파워 (W)"
+
+            s_peaks = [max([((a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0) for a in prev_acts] or [0]) for _, k in dur_keys]
+            o_peaks = [max([((a.get("max_power") if k == "max_power" else (a.get("mmp", {}).get(k) or 0)) or 0) for a in curr_acts] or [0]) for _, k in dur_keys]
 
             with col_ref1:
                 fig_mmp = go.Figure()
                 fig_mmp.add_trace(go.Scatter(
                     x=[d[0] for d in dur_keys], y=s_peaks, mode="lines+markers",
-                    name="9월 최고 파워 (W)", line=dict(color="#38bdf8", width=3),
+                    name=label_prev, line=dict(color="#38bdf8", width=3),
                 ))
                 fig_mmp.add_trace(go.Scatter(
                     x=[d[0] for d in dur_keys], y=o_peaks, mode="lines+markers",
-                    name="10월 최고 파워 (W)", line=dict(color="#f43f5e", width=3, dash="dash"),
+                    name=label_curr, line=dict(color="#f43f5e", width=3, dash="dash"),
                 ))
                 fig_mmp.update_layout(
-                    title="[참고치] 구간별 피크 파워 커브 (1초 ~ 60분 MMP)",
+                    title="구간별 피크 파워 커브 (1초 ~ 60분 MMP)",
                     xaxis_title="지속 시간", yaxis_title="파워 (Watts)",
                     height=340, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
                 )
@@ -616,17 +691,114 @@ with tab2:
                 ))
                 fig_lr.add_hline(y=50.0, line_dash="dash", line_color="#22c55e", annotation_text="50.0% 대칭 기준선")
                 fig_lr.update_layout(
-                    title="[참고치] 좌/우 페달링 밸런스 추이 (9월~10월)",
+                    title="좌/우 페달링 밸런스 추이",
                     xaxis_title="날짜", yaxis_title="왼발 비중 (%)",
                     height=340, template="plotly_dark", margin=dict(l=20, r=20, t=40, b=20),
                 )
                 st.plotly_chart(fig_lr, use_container_width=True)
 
 
-# ----------------- TAB 3: TRAINING PLAN GENERATOR -----------------
+# ----------------- TAB 3: TRAINING PLAN GENERATOR & WORKOUT FILE EXPORTER -----------------
 with tab3:
-    st.subheader("📅 목표 맞춤형 사이클링 훈련 플랜 설계")
-    st.markdown("목표 이벤트와 주당 가용 시간을 설정하면 현재 FTP와 TSB 컨디션을 반영한 체계적인 주기화 훈련표를 설계합니다.")
+    st.subheader("⚡ 원클릭 가민 Edge 1040 (`.fit`) & Zwift/Intervals.icu (`.zwo`) 워크아웃 파일 생성기")
+    st.markdown(
+        f"현재 설정된 **FTP `{ftp_input}W`**, **LTHR `{lthr_input}bpm`**, **최대심박 `{max_hr_input}bpm`**에 맞춰 와트(W) 타겟이 자동 계산된 실전 워크아웃 파일을 즉시 다운로드할 수 있습니다."
+    )
+
+    presets = get_preset_workouts(ftp=ftp_input, lthr=lthr_input, max_hr=max_hr_input)
+    preset_titles = list(presets.keys())
+    selected_title = st.selectbox("🎯 다운로드할 맞춤 워크아웃 선택", preset_titles, index=0)
+    selected_wo = presets[selected_title]
+
+    st.info(f"💡 **코치 설계 의도**: {selected_wo['description']}")
+
+    wo_steps = selected_wo["steps"]
+    step_rows = []
+    bar_x = []
+    bar_y = []
+    bar_colors = []
+    bar_texts = []
+    for idx_s, stp in enumerate(wo_steps, 1):
+        dur_m = round(stp["duration_sec"] / 60.0, 1)
+        mid_w = round((stp["low_w"] + stp["high_w"]) / 2.0)
+        step_rows.append({
+            "순서": f"Step {idx_s}",
+            "구간명": stp["name"],
+            "지속 시간(분)": f"{dur_m}분",
+            "목표 파워(W)": f"{stp['low_w']}W ~ {stp['high_w']}W",
+            "평균 타겟": f"{mid_w}W ({round(mid_w / ftp_input * 100)}% FTP)",
+        })
+        bar_x.append(f"{idx_s}. {stp['name']} ({dur_m}m)")
+        bar_y.append(mid_w)
+        if stp["intensity"] in ("warmup", "cooldown", "rest"):
+            bar_colors.append("#38bdf8")
+        elif mid_w >= ftp_input * 0.94:
+            bar_colors.append("#ef4444")
+        elif mid_w >= ftp_input * 0.85:
+            bar_colors.append("#f97316")
+        else:
+            bar_colors.append("#22c55e")
+        bar_texts.append(f"{stp['low_w']}~{stp['high_w']}W")
+
+    col_wo_chart, col_wo_table = st.columns([3, 2])
+    with col_wo_chart:
+        fig_wo = go.Figure(
+            go.Bar(
+                x=bar_x,
+                y=bar_y,
+                marker_color=bar_colors,
+                text=bar_texts,
+                textposition="auto",
+                name="목표 파워 (W)",
+            )
+        )
+        fig_wo.add_hline(y=ftp_input, line_dash="dash", line_color="#f43f5e", annotation_text=f"FTP {ftp_input}W")
+        fig_wo.update_layout(
+            title=f"워크아웃 구간별 목표 파워 프로파일 ({selected_wo['short_name']})",
+            xaxis_title="구간 (Step)",
+            yaxis_title="목표 파워 (Watts)",
+            height=320,
+            template="plotly_dark",
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
+        st.plotly_chart(fig_wo, use_container_width=True)
+
+    with col_wo_table:
+        st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=320)
+
+    fit_bytes = build_garmin_workout_fit_bytes(workout_name=selected_wo["short_name"], steps=wo_steps)
+    zwo_xml = build_zwift_zwo_xml(
+        workout_name=selected_wo["short_name"],
+        description=selected_wo["description"],
+        ftp=ftp_input,
+        steps=wo_steps,
+    )
+
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        st.download_button(
+            "📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드",
+            data=fit_bytes,
+            file_name=f"{selected_wo['short_name']}_FTP{ftp_input}W.fit",
+            mime="application/octet-stream",
+            type="primary",
+            use_container_width=True,
+        )
+        st.caption("📌 **가민 1040 넣는 법**: Edge 1040을 PC에 USB로 연결 → `Garmin\\NewFiles` 폴더에 다운로드한 `.fit` 파일을 복사 후 연결 해제하면 **훈련 > 워크아웃**에 즉시 생성됩니다!")
+    with dl_col2:
+        st.download_button(
+            "📥 Zwift / Intervals.icu 워크아웃 (.zwo) 다운로드",
+            data=zwo_xml.encode("utf-8"),
+            file_name=f"{selected_wo['short_name']}_FTP{ftp_input}W.zwo",
+            mime="application/xml",
+            use_container_width=True,
+        )
+        st.caption("📌 **Zwift / Intervals.icu 넣는 법**: `Documents\\Zwift\\Workouts` 폴더에 넣거나 Intervals.icu 워크아웃 빌더에 업로드하면 가민 커넥트 달력과 무선 동기화할 수도 있습니다.")
+
+    st.divider()
+
+    st.subheader("📅 AI 다주간 주기화 훈련 플랜 설계기")
+    st.markdown("목표 이벤트와 주당 가용 시간을 설정하면 현재 FTP와 TSB 컨디션을 반영한 체계적인 다주간 주기화 훈련표를 설계합니다.")
 
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
@@ -634,6 +806,7 @@ with tab3:
             "목표 이벤트 / 종목",
             [
                 "FTP 향상 & 3.1+ W/kg 달성 (스윗스팟 및 역치 집중)",
+                "FatMax 체지방 감량 & 유산소 엔진 극대화 (64.5kg → 62.5kg 목표)",
                 "그란폰도 / 장거리 산악 완주 (100km+ 지구력 & 업힐 케이던스)",
                 "힐클라임 대회 (W/kg 강화 & VO2 Max)",
                 "크리테리움 / 단거리 로드 레이스 (무산소 파워)",
@@ -646,7 +819,7 @@ with tab3:
     with col_p3:
         plan_hours = st.slider("주당 가용 훈련 시간", min_value=4.0, max_value=16.0, value=9.0, step=0.5)
 
-    generate_plan_btn = st.button("🚀 AI 맞춤형 훈련 플랜 생성하기", type="primary", use_container_width=True)
+    generate_plan_btn = st.button("🚀 AI 맞춤형 다주간 훈련 플랜 생성하기", type="primary", use_container_width=True)
 
     if generate_plan_btn:
         with st.spinner("AI 코치가 생리학적 원리를 바탕으로 주기화 훈련표를 생성 중입니다..."):
@@ -711,16 +884,18 @@ with tab4:
             st.rerun()
 
     st.write("💡 **자주 묻는 추천 질문:**")
-    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+    q_col1, q_col2, q_col3, q_col4, q_col5 = st.columns(5)
     quick_prompt = None
-    if q_col1.button("📈 FTP 196W → 210W 돌파 (실전 루틴)", use_container_width=True):
+    if q_col1.button("🔥 FatMax 90분 서지 & 체지방 감량", use_container_width=True):
+        quick_prompt = "현재 FTP 196W, 최대심박 184bpm(LTHR 161bpm) 기준에서 근육 손실 없이 내장지방과 체지방만 가장 빠르게 태우는 FatMax 골든존(118~141W, 심박 120~137bpm) 90분 라이딩 방법과 식단·보급 타이밍을 알려주세요."
+    if q_col2.button("📈 FTP 196W → 210W 돌파 루틴", use_container_width=True):
         quick_prompt = "불필요한 150bpm 심박 제한 없이, 실제 LTHR 161bpm(최대 184bpm)과 현재 FTP 196W를 기준으로 FTP를 210W 이상으로 끌어올릴 수 있는 평일 인도어/단거리 인터벌과 주말 라이딩 구성을 짜주세요."
-    if q_col2.button("🦵 클릿 최후방 & 좌측 오금 당김 교정", use_container_width=True):
+    if q_col3.button("🦵 클릿 최후방 & 좌측 오금 당김 교정", use_container_width=True):
         quick_prompt = "현재 클릿을 신발 최후방으로 밀어둔 상태이고 10월 장거리 주행에서 왼발 비중(53~53.5%)이 높아지며 왼쪽 무릎 뒤(오금/슬와근)가 당겼습니다. 안장 높이와 페달링을 어떻게 교정할까요?"
-    if q_col3.button("💧 알닥톤 25mg & 장거리 혈압·수분 관리", use_container_width=True):
+    if q_col4.button("💧 알닥톤 25mg & 장거리 혈압·수분 관리", use_container_width=True):
         quick_prompt = "알닥톤 25mg 복용 중인데 90~100km 장거리 라이딩이나 고강도 훈련을 타면서 운동 후 이완기 혈압 반등(90mmHg+)과 탈수를 막으려면 수분·전해질 섭취와 쿨다운을 어떻게 해야 할까요?"
-    if q_col4.button("❤️ LTHR 161bpm 기준 파워·심박 매칭", use_container_width=True):
-        quick_prompt = "젖산역치 심박수(LTHR) 161bpm, 최대심박수 184bpm, FTP 196W 기준으로 Z2 지구력, Sweet Spot, Z4 역치 훈련 시 각각 적정 와트(W)와 심박수(bpm) 범위를 정리해 주세요."
+    if q_col5.button("❤️ LTHR 161bpm 기준 파워·심박 매칭", use_container_width=True):
+        quick_prompt = "젖산역치 심박수(LTHR) 161bpm, 최대심박수 184bpm, FTP 196W 기준으로 FatMax, Z2 지구력, Sweet Spot, Z4 역치 훈련 시 각각 적정 와트(W)와 심박수(bpm) 범위를 정리해 주세요."
 
     if "messages" not in st.session_state or not st.session_state["messages"]:
         saved_msgs = mem_data.get("messages", [])
@@ -783,18 +958,18 @@ with tab4:
                 parsed_fit = parse_uploaded_fit_bytes(raw_bytes, filename=fname, ftp=float(ftp_input))
                 if parsed_fit:
                     fit_summary = (
-                        f"• FIT 파일 [{fname}]: 날짜={parsed_fit.get('start_date_local', '')[:10]}, "
-                        f"거리={round(parsed_fit.get('distance', 0)/1000, 2)}km, "
-                        f"이동시간={round(parsed_fit.get('moving_time', 0)/60, 1)}분, "
-                        f"획득고도={parsed_fit.get('total_elevation_gain', 0)}m, "
-                        f"평균파워={parsed_fit.get('average_watts', 0)}W, NP={parsed_fit.get('weighted_average_watts', 0)}W, "
-                        f"최대파워={parsed_fit.get('max_watts', 0)}W, 평균심박={parsed_fit.get('average_heartrate', 0)}bpm, "
-                        f"최대심박={parsed_fit.get('max_heartrate', 0)}bpm, 케이던스={parsed_fit.get('average_cadence', 0)}rpm, "
-                        f"좌우밸런스(왼발)={parsed_fit.get('left_balance', 'N/A')}%, "
-                        f"토크효율(L/R)={parsed_fit.get('left_torque_eff', 'N/A')}/{parsed_fit.get('right_torque_eff', 'N/A')}%, "
-                        f"페달스무스니스(L/R)={parsed_fit.get('left_smoothness', 'N/A')}/{parsed_fit.get('right_smoothness', 'N/A')}%, "
+                        f"• FIT 파일 [{fname}]: 날짜={parsed_fit.get('date', '')}, "
+                        f"거리={round((parsed_fit.get('distance_m') or 0)/1000, 2)}km, "
+                        f"이동시간={round((parsed_fit.get('timer_time_s') or 0)/60, 1)}분, "
+                        f"획득고도={parsed_fit.get('ascent_m', 0)}m, "
+                        f"평균파워={parsed_fit.get('avg_power', 0)}W, NP={parsed_fit.get('np', 0)}W, "
+                        f"최대파워={parsed_fit.get('max_power', 0)}W, 평균심박={parsed_fit.get('avg_hr', 0)}bpm, "
+                        f"최대심박={parsed_fit.get('max_hr', 0)}bpm, 케이던스={parsed_fit.get('avg_cadence', 0)}rpm, "
+                        f"좌우밸런스(L/R)={parsed_fit.get('lr_str', 'N/A')}, "
+                        f"토크효율(L/R)={parsed_fit.get('avg_left_torque_eff', 'N/A')}/{parsed_fit.get('avg_right_torque_eff', 'N/A')}%, "
+                        f"페달스무스니스(L/R)={parsed_fit.get('avg_left_pedal_smooth', 'N/A')}/{parsed_fit.get('avg_right_pedal_smooth', 'N/A')}%, "
                         f"스태미나(시작→종료)={parsed_fit.get('stamina_start', 'N/A')}→{parsed_fit.get('stamina_end', 'N/A')}%, "
-                        f"피크파워(MMP)={parsed_fit.get('peak_powers', {})}"
+                        f"피크파워(MMP)={parsed_fit.get('mmp', {})}"
                     )
                     attachments_payload.append({"name": fname, "text_summary": fit_summary})
                 else:

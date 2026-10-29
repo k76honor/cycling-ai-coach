@@ -104,7 +104,9 @@ def _compute_decoupling(powers: List[Optional[float]], hrs: List[Optional[float]
     return round(float(((ef1 - ef2) / ef1) * 100.0), 2)
 
 
-def parse_uploaded_fit_bytes(file_bytes: bytes, filename: str) -> Optional[Dict[str, Any]]:
+def parse_uploaded_fit_bytes(
+    file_bytes: bytes, filename: str, ftp: Optional[float] = None
+) -> Optional[Dict[str, Any]]:
     """Parses a raw .fit file uploaded via Streamlit file_uploader into our unified Garmin activity dict."""
     try:
         import fitdecode
@@ -170,6 +172,17 @@ def parse_uploaded_fit_bytes(file_bytes: bytes, filename: str) -> Optional[Dict[
     ef = round(np_p / avg_hr, 2) if (np_p and avg_hr and avg_hr > 0) else None
     vi = round(np_p / avg_p, 3) if (np_p and avg_p and avg_p > 0) else None
 
+    lr = session_data.get("left_right_balance")
+    if lr is not None and isinstance(lr, (int, float)) and lr > 32768:
+        right_pct = (lr - 32768) / 100.0
+        left_pct = round(100.0 - right_pct, 1)
+        right_pct = round(right_pct, 1)
+        lr_str = f"{left_pct:.1f}% L / {right_pct:.1f}% R"
+    else:
+        left_pct = None
+        right_pct = None
+        lr_str = "-"
+
     return {
         "file": filename,
         "start_kst": start_kst,
@@ -190,7 +203,7 @@ def parse_uploaded_fit_bytes(file_bytes: bytes, filename: str) -> Optional[Dict[
         "avg_power": avg_p,
         "max_power": session_data.get("max_power"),
         "np": np_p,
-        "ftp": session_data.get("threshold_power") or tiz_session.get("functional_threshold_power"),
+        "ftp": session_data.get("threshold_power") or tiz_session.get("functional_threshold_power") or ftp,
         "if": session_data.get("intensity_factor"),
         "tss": session_data.get("training_stress_score"),
         "vi": vi,
@@ -214,7 +227,12 @@ def parse_uploaded_fit_bytes(file_bytes: bytes, filename: str) -> Optional[Dict[
         "workout_rpe": session_data.get("workout_rpe"),
         "stamina_start": session_data.get("unknown_205"),
         "stamina_end": session_data.get("unknown_206"),
-        "left_right_balance": session_data.get("left_right_balance"),
+        "left_right_balance": lr,
+        "left_pct": left_pct,
+        "right_pct": right_pct,
+        "lr_str": lr_str,
+        "avg_left_torque_eff": session_data.get("avg_left_torque_effectiveness"),
+        "avg_right_torque_eff": session_data.get("avg_right_torque_effectiveness"),
         "avg_left_pedal_smooth": session_data.get("avg_left_pedal_smoothness"),
         "avg_right_pedal_smooth": session_data.get("avg_right_pedal_smoothness"),
         "time_in_hr_zone": list(tiz_session.get("time_in_hr_zone", [])) if tiz_session.get("time_in_hr_zone") else None,

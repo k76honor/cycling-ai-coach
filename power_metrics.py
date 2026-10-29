@@ -28,6 +28,13 @@ def get_power_zones(ftp: float) -> Dict[str, Dict[str, Any]]:
             "description": "미토콘드리아 증식, 지방 대사 효율 극대화, 장거리 베이스",
             "color": "#38bdf8",
         },
+        "FatMax": {
+            "name": "FatMax: 지방연소 최대화 골든존",
+            "range": (round(ftp * 0.60), round(ftp * 0.72)),
+            "pct": "60% - 72%",
+            "description": "젖산 축적 없이 순수 체지방 산화율(g/min)이 최고조에 달하는 구간",
+            "color": "#22c55e",
+        },
         "Z3_Tempo": {
             "name": "Zone 3: Tempo (템포)",
             "range": (round(ftp * 0.76), round(ftp * 0.90)),
@@ -110,6 +117,46 @@ def calculate_tss(moving_time_sec: int, np_watts: float, ftp: float) -> float:
     return round(float(tss), 1)
 
 
+def estimate_substrate_burn(
+    moving_time_sec: float, avg_watts: float, np_watts: float, ftp: float
+) -> Dict[str, float]:
+    """
+    Estimates total calories (kcal), Fat oxidized (g), and Carbohydrates oxidized (g)
+    based on mechanical work (kJ ≈ kcal at ~23.9% human gross efficiency) and Intensity Factor (IF).
+    """
+    if moving_time_sec <= 0 or (avg_watts <= 0 and np_watts <= 0):
+        return {"kcal": 0, "fat_g": 0.0, "carb_g": 0.0, "fat_pct": 0}
+
+    base_w = avg_watts if avg_watts > 0 else np_watts * 0.92
+    eff_np = np_watts if np_watts > 0 else base_w
+    if_val = eff_np / max(100.0, ftp)
+
+    # Mechanical kJ = Watts * sec / 1000. Human metabolic kcal ≈ kJ * 1.04
+    kcal = (base_w * moving_time_sec / 1000.0) * 1.04
+
+    # Fat oxidation energy share vs IF (peaks in Z1/FatMax ~55-68%, drops sharply near FTP)
+    if if_val <= 0.60:
+        fat_share = 0.65
+    elif if_val <= 0.72:  # FatMax Golden Zone
+        fat_share = 0.62 - (if_val - 0.60) * 0.50  # 62% -> 56%
+    elif if_val <= 0.85:  # Z3 Tempo
+        fat_share = 0.56 - (if_val - 0.72) * 1.60  # 56% -> 35%
+    elif if_val <= 0.95:  # Sweet Spot / Z4
+        fat_share = 0.35 - (if_val - 0.85) * 2.00  # 35% -> 15%
+    else:                 # Z4+ / VO2Max
+        fat_share = max(0.05, 0.15 - (if_val - 0.95) * 1.00)
+
+    fat_kcal = kcal * fat_share
+    carb_kcal = kcal * (1.0 - fat_share)
+    # 1g Fat ≈ 9 kcal, 1g Carb ≈ 4 kcal
+    return {
+        "kcal": round(kcal),
+        "fat_g": round(fat_kcal / 9.0, 1),
+        "carb_g": round(carb_kcal / 4.0, 1),
+        "fat_pct": round(fat_share * 100),
+    }
+
+
 def calculate_power_distribution(power_stream: List[float], ftp: float) -> Dict[str, float]:
     """
     Calculates percentage of time spent in each Coggan Power Zone (Z1 to Z7).
@@ -123,8 +170,8 @@ def calculate_power_distribution(power_stream: List[float], ftp: float) -> Dict[
     
     distribution = {}
     for key, zinfo in zones.items():
-        if key == "Sweet_Spot":
-            continue  # Sweet spot overlaps Z3 and Z4, track separately if needed
+        if key in ("Sweet_Spot", "FatMax"):
+            continue  # Overlaps standard zones, tracked separately
         low, high = zinfo["range"]
         if key == "Z7_Neuromuscular":
             count = np.sum(arr >= low)
@@ -191,6 +238,23 @@ def calculate_pmc(daily_tss_series: pd.Series) -> pd.DataFrame:
     df["tsb"] = df["ctl"] - df["atl"]
 
     return df.round(1)
+
+
+def project_pmc_future(pmc_df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
+    """
+    Projects CTL, ATL, and TSB for the next `days` days assuming rest (0 TSS/day),
+    helping the rider plan tapering or recovery.
+    """
+    if pmc_df.empty:
+        return pd.DataFrame()
+    last_date = pmc_df.index[-1]
+    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days, freq="D")
+    combined_tss = pd.concat([
+        pmc_df["tss"],
+        pd.Series(0.0, index=future_dates),
+    ])
+    full_pmc = calculate_pmc(combined_tss)
+    return full_pmc.iloc[-(days + 1):]
 
 
 def interpret_tsb(tsb: float) -> Dict[str, str]:

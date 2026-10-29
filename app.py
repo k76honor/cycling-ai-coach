@@ -71,23 +71,52 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling
+# Custom Styling (Optimized for Full HD 1920x1080 & Laptop Screens)
 st.markdown(
     """
     <style>
+    .block-container {
+        padding-top: 1.8rem !important;
+        padding-bottom: 1.5rem !important;
+    }
     .metric-card {
         background-color: #1e293b;
         border-radius: 10px;
-        padding: 16px;
+        padding: 12px 14px;
         color: white;
-        margin-bottom: 12px;
-        border-left: 5px solid #38bdf8;
+        margin-bottom: 10px;
+        border-left: 4px solid #38bdf8;
+    }
+    /* Prevent sidebar input labels from wrapping onto 2 lines */
+    section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+        font-size: 0.82rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    /* Crisp KPI Metric Cards for 5~6 column layouts on Full HD */
+    [data-testid="stMetric"] {
+        background-color: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 10px;
+        padding: 10px 12px !important;
+    }
+    [data-testid="stMetricLabel"] p {
+        font-size: 0.82rem !important;
+        white-space: nowrap !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.35rem !important;
+        line-height: 1.25 !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.76rem !important;
     }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 20px;
+        gap: 16px;
     }
     .stTabs [data-baseweb="tab"] {
-        font-size: 1.05rem;
+        font-size: 1.0rem;
         font-weight: 600;
     }
     div[data-testid="stChatInput"] {
@@ -118,8 +147,7 @@ init_rest_hr = int(saved_profile.get("rest_hr", DEFAULT_REST_HR))
 col_sb1, col_sb2 = st.sidebar.columns(2)
 with col_sb1:
     ftp_input = st.number_input(
-        "기준 FTP (W)", min_value=100, max_value=500, value=init_ftp, step=1,
-        help="1시간 동안 지속할 수 있는 최대 평균 파워(FTP). 언제든 직접 수정하거나 아래 Strava 자동 산출값으로 갱신할 수 있습니다."
+        "기준 FTP (W)", min_value=100, max_value=500, value=init_ftp, step=1
     )
 with col_sb2:
     weight_input = st.number_input(
@@ -129,13 +157,11 @@ with col_sb2:
 col_hr1, col_hr2, col_hr3 = st.sidebar.columns(3)
 with col_hr1:
     lthr_input = st.number_input(
-        "LTHR (역치)", min_value=120, max_value=200, value=init_lthr, step=1,
-        help="젖산역치 심박수 (실측 검증: 161 bpm)"
+        "역치심박", min_value=120, max_value=200, value=init_lthr, step=1
     )
 with col_hr2:
     max_hr_input = st.number_input(
-        "최대심박", min_value=140, max_value=220, value=init_max_hr, step=1,
-        help="최대심박수 (9/5 실측 최고: 183~184 bpm)"
+        "최대심박", min_value=140, max_value=220, value=init_max_hr, step=1
     )
 with col_hr3:
     rest_hr_input = st.number_input(
@@ -423,68 +449,65 @@ with tab1:
 
     col_pz, col_hrz = st.columns(2)
     with col_pz:
-        st.subheader(f"⚡ Coggan 파워존 + FatMax (FTP {ftp_input}W 기준)")
+        st.subheader(f"⚡ 파워존 + FatMax (FTP {ftp_input}W)")
         zones = get_power_zones(ftp_input)
         zone_data = []
         for k, v in zones.items():
             low, high = v["range"]
+            short_zname = v["name"].split(":")[1].strip() if ":" in v["name"] else v["name"]
+            if k == "FatMax":
+                short_zname = "🔥 FatMax 골든존"
             zone_data.append({
-                "파워 존": v["name"].split(":")[1].strip() if ":" in v["name"] else v["name"],
-                "FTP 비율": v["pct"],
-                "목표 와트 (W)": f"{low}W ~ {high}W",
-                "훈련 목적": v["description"],
+                "파워 존": short_zname,
+                "비율": v["pct"],
+                "목표 파워": f"{low}~{high}W",
+                "핵심 효과": v["description"][:22],
             })
         st.dataframe(pd.DataFrame(zone_data), use_container_width=True, hide_index=True)
 
     with col_hrz:
-        st.subheader(f"❤️ 심박수 훈련 존 + FatMax (LTHR {lthr_input}bpm / Max {max_hr_input}bpm)")
+        st.subheader(f"❤️ 심박존 + FatMax (LTHR {lthr_input} / Max {max_hr_input})")
         hr_zones_table = [
             {
-                "심박 존": "Zone 1 (회복 / 웜업)",
-                "%LTHR 기준": "< 81% LTHR",
-                "심박수 (%LTHR 추천)": f"~ {round(lthr_input * 0.81)} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.50)} ~ {round(max_hr_input * 0.60)} bpm",
-                "훈련 효과": "적극적 회복 및 혈류 촉진 (쿨다운 125bpm 이하 필수)",
+                "심박 존": "Z1 (회복·웜업)",
+                "권장 (%LTHR)": f"< {round(lthr_input * 0.81)} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.50)}~{round(max_hr_input * 0.60)}",
+                "핵심 효과": "혈류 촉진 · 쿨다운(<125bpm)",
             },
             {
-                "심박 존": "🔥 FatMax 골든존 (지방연소 극대화)",
-                "%LTHR 기준": "75% ~ 85% LTHR",
-                "심박수 (%LTHR 추천)": f"{round(lthr_input * 0.75)} ~ {round(lthr_input * 0.85)} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.65)} ~ {round(max_hr_input * 0.75)} bpm",
-                "훈련 효과": f"분당 지방 산화율 최고점 (상한 캡 {round(max_hr_input * 0.75) + 1}bpm 미만 유지)",
+                "심박 존": "🔥 FatMax 골든존",
+                "권장 (%LTHR)": f"{round(lthr_input * 0.75)}~{round(lthr_input * 0.85)} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.65)}~{round(max_hr_input * 0.75)}",
+                "핵심 효과": f"지방연소 최고점 (<{round(max_hr_input * 0.75) + 1}bpm 캡)",
             },
             {
-                "심박 존": "Zone 2 (유산소 지구력)",
-                "%LTHR 기준": "81% ~ 89% LTHR",
-                "심박수 (%LTHR 추천)": f"{round(lthr_input * 0.81)} ~ {round(lthr_input * 0.89)} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.60)} ~ {round(max_hr_input * 0.70)} bpm",
-                "훈련 효과": "지방 대사 및 기초체력(Base) 양성",
+                "심박 존": "Z2 (유산소 지구력)",
+                "권장 (%LTHR)": f"{round(lthr_input * 0.81)}~{round(lthr_input * 0.89)} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.60)}~{round(max_hr_input * 0.70)}",
+                "핵심 효과": "기초체력(Base) · 미토콘드리아",
             },
             {
-                "심박 존": "Zone 3 (템포 / 에어로빅)",
-                "%LTHR 기준": "90% ~ 93% LTHR",
-                "심박수 (%LTHR 추천)": f"{round(lthr_input * 0.90)} ~ {round(lthr_input * 0.93)} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.70)} ~ {round(max_hr_input * 0.80)} bpm",
-                "훈련 효과": "유산소 용량 및 크루징 속도 향상",
+                "심박 존": "Z3 (템포)",
+                "권장 (%LTHR)": f"{round(lthr_input * 0.90)}~{round(lthr_input * 0.93)} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.70)}~{round(max_hr_input * 0.80)}",
+                "핵심 효과": "유산소 용량 · 항속 크루징",
             },
             {
-                "심박 존": "Zone 4 (젖산역치 / 한계치)",
-                "%LTHR 기준": "94% ~ 99% LTHR",
-                "심박수 (%LTHR 추천)": f"{round(lthr_input * 0.94)} ~ {lthr_input} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.80)} ~ {round(max_hr_input * 0.90)} bpm",
-                "훈련 효과": "젖산 제거 능력 및 FTP 직접 향상",
+                "심박 존": "Z4 (젖산역치)",
+                "권장 (%LTHR)": f"{round(lthr_input * 0.94)}~{lthr_input} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.80)}~{round(max_hr_input * 0.90)}",
+                "핵심 효과": "젖산 제거 · FTP 직접 향상",
             },
             {
-                "심박 존": "Zone 5 (VO2 Max / 무산소)",
-                "%LTHR 기준": "100%+ LTHR (~Max)",
-                "심박수 (%LTHR 추천)": f"{lthr_input + 1} ~ {max_hr_input} bpm",
-                "심박수 (%MaxHR 참고)": f"{round(max_hr_input * 0.90)} ~ {max_hr_input} bpm",
-                "훈련 효과": "최대 산소 섭취량 및 고강도 인터벌",
+                "심박 존": "Z5 (VO2 Max)",
+                "권장 (%LTHR)": f"{lthr_input + 1}~{max_hr_input} bpm",
+                "참고 (%Max)": f"{round(max_hr_input * 0.90)}~{max_hr_input}",
+                "핵심 효과": "최대 산소 섭취량 · 고강도",
             },
         ]
         st.dataframe(pd.DataFrame(hr_zones_table), use_container_width=True, hide_index=True)
 
-    st.subheader(f"🚴 실시간 연동 라이딩 활동 내역 및 지방·탄수화물 연소량 추정 (총 {len(activities)}회)")
+    st.subheader(f"🚴 실시간 연동 라이딩 활동 내역 (총 {len(activities)}회)")
     if activities:
         recent_table = []
         for act in activities:
@@ -496,19 +519,18 @@ with tab1:
             recent_table.append({
                 "날짜": act["start_date_local"][:16].replace("T", " "),
                 "라이딩명": act["name"],
-                "구분": "실내" if act.get("sub_sport") == "indoor_cycling" else "야외 도로",
-                "거리(km)": round(act["distance"] / 1000.0, 1),
-                "이동시간(분)": round(mov_s / 60.0, 1),
-                "획득고도(m)": int(act.get("total_elevation_gain", 0)),
-                "평균 파워(W)": round(avg_w),
-                "NP(W)": round(np_w),
-                "평균/최대 심박": f"{int(act.get('average_heartrate') or 0)} / {int(act.get('max_heartrate') or 0)}",
-                "케이던스": int(act.get("average_cadence") or 0),
-                "EF(효율)": act.get("ef") or "-",
+                "구분": "실내" if act.get("sub_sport") == "indoor_cycling" else "도로",
+                "거리": f"{round(act['distance'] / 1000.0, 1)}km",
+                "시간": f"{round(mov_s / 60.0)}분",
+                "고도": f"{int(act.get('total_elevation_gain', 0))}m",
+                "평균/NP": f"{round(avg_w)} / {round(np_w)}W",
+                "심박(평균/최대)": f"{int(act.get('average_heartrate') or 0)}/{int(act.get('max_heartrate') or 0)}",
+                "RPM": int(act.get("average_cadence") or 0),
+                "EF": act.get("ef") or "-",
                 "IF": round(if_val, 2),
                 "TSS": round(act.get("tss", 0.0), 1),
-                "소모열량(kcal)": sub["kcal"],
-                "🔥지방 / 🍚탄수(g)": f"🔥{sub['fat_g']}g ({sub['fat_pct']}%) / 🍚{sub['carb_g']}g",
+                "열량": f"{sub['kcal']}kcal",
+                "🔥지방/🍚탄수": f"🔥{sub['fat_g']}g({sub['fat_pct']}%) / 🍚{sub['carb_g']}g",
             })
         st.dataframe(pd.DataFrame(recent_table), use_container_width=True, hide_index=True)
 
@@ -740,128 +762,91 @@ with tab3:
     )
     presets = ranked_data["workouts"]
     preset_titles = list(presets.keys())
+    st.caption(f"🤖 **실시간 컨디션 자동 정렬**: {ranked_data['reason']}")
 
-    st.caption(f"🤖 **실시간 몸 상태 맞춤 추천 순위 자동 정렬됨**: {ranked_data['reason']}")
-
-    selected_title = st.selectbox("🎯 오늘 컨디션 맞춤 워크아웃 선택 (1순위 자동 선택)", preset_titles, index=0)
+    col_sel, col_dl_fit, col_dl_zwo = st.columns([2.8, 1.1, 1.1])
+    with col_sel:
+        selected_title = st.selectbox(
+            "🎯 오늘 컨디션 맞춤 워크아웃 선택",
+            preset_titles,
+            index=0,
+            label_visibility="collapsed",
+        )
     selected_wo = presets[selected_title]
     wo_desc = selected_wo.get("description") or selected_wo.get("summary", "")
     wo_short = selected_wo.get("short_name") or selected_wo.get("fit_name", "Garmin_Workout")
+    wo_steps = selected_wo["steps"]
 
-    # 1) 5 KPI Metric Cards for Selected Workout Expected Effects (with comparison vs 5-course average)
+    fit_bytes = build_garmin_workout_fit_bytes(workout_name=wo_short, steps=wo_steps)
+    zwo_xml = build_zwift_zwo_xml(
+        workout_name=wo_short,
+        description=wo_desc,
+        ftp=ftp_input,
+        steps=wo_steps,
+    )
+    with col_dl_fit:
+        st.download_button(
+            "📥 가민 1040 (.fit) 받기",
+            data=fit_bytes,
+            file_name=f"{wo_short}_FTP{ftp_input}W.fit",
+            mime="application/octet-stream",
+            type="primary",
+            use_container_width=True,
+            help="가민 Edge 1040 USB 연결 후 Garmin\\NewFiles 폴더에 복사하세요.",
+        )
+    with col_dl_zwo:
+        st.download_button(
+            "📥 Zwift (.zwo) 받기",
+            data=zwo_xml.encode("utf-8"),
+            file_name=f"{wo_short}_FTP{ftp_input}W.zwo",
+            mime="application/xml",
+            use_container_width=True,
+            help="Zwift Workouts 폴더 또는 Intervals.icu에 업로드하세요.",
+        )
+
+    # 1) 5 Crisp KPI Metric Cards for Selected Workout Expected Effects
     avg_fat_all = np.mean([w["est_fat_g"] for w in presets.values()])
     fat_diff = round(selected_wo["est_fat_g"] - avg_fat_all, 1)
 
     eff_c1, eff_c2, eff_c3, eff_c4, eff_c5 = st.columns(5)
     with eff_c1:
         st.metric(
-            "🔥 예상 지방 연소량",
+            "🔥 예상 지방 연소",
             f"{selected_wo['est_fat_g']} g",
-            f"지방비중 {selected_wo['est_fat_pct']}% (평균대비 {fat_diff:+.1f}g)",
+            f"비중 {selected_wo['est_fat_pct']}% (평균 {fat_diff:+.1f}g)",
         )
     with eff_c2:
         st.metric(
-            "⚡ 소모 열량 / 탄수화물",
+            "⚡ 소모 열량 / 탄수",
             f"{selected_wo['est_kcal']} kcal",
-            f"🍚 탄수화물 {selected_wo['est_carb_g']}g 소모",
+            f"탄수화물 {selected_wo['est_carb_g']}g 소모",
             delta_color="off",
         )
     with eff_c3:
         st.metric(
-            "📉 주행 후 내일 예상 TSB",
-            f"{selected_wo['next_tsb']:+.1f}",
-            f"오늘대비 {selected_wo['tsb_delta']:+.1f} (CTL {selected_wo['ctl_delta']:+.1f} / ATL {selected_wo['atl_delta']:+.1f})",
+            "📉 내일 예상 컨디션",
+            f"TSB {selected_wo['next_tsb']:+.1f}",
+            f"오늘 {selected_wo['tsb_delta']:+.1f} (ATL {selected_wo['atl_delta']:+.1f})",
             delta_color="normal" if selected_wo["next_tsb"] >= -10 else "inverse",
         )
     with eff_c4:
         st.metric(
-            "🚀 가민 예상 유산소 TE",
-            f"TE {selected_wo['aerobic_te'].split(' ')[0]}",
+            "🚀 가민 유산소 효과",
+            f"TE {selected_wo['aerobic_te']}",
             selected_wo["ftp_gain_score"],
             delta_color="off",
         )
     with eff_c5:
         st.metric(
-            "🦵 오금 부담 / 부하",
-            f"{selected_wo['duration_min']}분 ({selected_wo['est_tss']} TSS)",
+            "🦵 오금부담 · 회복",
             selected_wo["joint_bp_safety"].split("(")[0].strip(),
+            f"{selected_wo['duration_min']}분 · {selected_wo['est_tss']} TSS",
             delta_color="off",
         )
 
-    st.info(f"💡 **선택한 코스 코치 설계 의도**: {wo_desc}")
+    st.caption(f"💡 **코치 설계 의도**: {wo_desc}")
 
-    # 2) Side-by-side Comparison of All 5 Workouts (Chart + Table highlighting selected workout)
-    st.markdown("##### 📊 5대 훈련 프로그램 예상 효과 한눈에 비교 (현재 선택된 코스 ⭐ 강조)")
-    cmp_rows = []
-    cmp_labels = []
-    cmp_fat_vals = []
-    cmp_tss_vals = []
-    cmp_fat_colors = []
-    cmp_line_widths = []
-
-    for title_k, w_item in presets.items():
-        is_sel = (title_k == selected_title)
-        marker_prefix = "👉 ⭐ " if is_sel else ""
-        short_lbl = w_item.get("short_label", w_item["short_name"])
-        cmp_labels.append(f"⭐ {short_lbl}\n(현재 선택)" if is_sel else short_lbl)
-        cmp_fat_vals.append(w_item["est_fat_g"])
-        cmp_tss_vals.append(w_item["est_tss"])
-        cmp_fat_colors.append("#22c55e" if is_sel else "#334155")
-        cmp_line_widths.append(3 if is_sel else 0)
-
-        cmp_rows.append({
-            "구분 / 추천순위": f"{marker_prefix}{w_item.get('rank_badge', '')}",
-            "훈련 코스명": f"{'⭐ ' if is_sel else ''}{short_lbl} ({w_item['duration_min']}분)",
-            "🔥 지방연소 (비중)": f"{w_item['est_fat_g']} g ({w_item['est_fat_pct']}%)",
-            "⚡ 열량 / 🍚 탄수": f"{w_item['est_kcal']} kcal / {w_item['est_carb_g']}g",
-            "📉 내일 예상 TSB (CTL/ATL)": f"{w_item['next_tsb']:+.1f} (CTL {w_item['next_ctl']:.1f} / ATL {w_item['next_atl']:.1f})",
-            "🚀 유산소 TE & FTP 기여도": f"TE {w_item['aerobic_te'].split(' ')[0]} | {w_item['ftp_gain_score']}",
-            "🦵 오금·혈압 안전도 (회복)": w_item["joint_bp_safety"],
-        })
-
-    col_cmp_chart, col_cmp_tbl = st.columns([2, 3])
-    with col_cmp_chart:
-        fig_cmp = go.Figure()
-        fig_cmp.add_trace(
-            go.Bar(
-                x=cmp_labels,
-                y=cmp_fat_vals,
-                name="🔥 예상 지방 연소량 (g)",
-                marker=dict(
-                    color=cmp_fat_colors,
-                    line=dict(color="#facc15", width=cmp_line_widths),
-                ),
-                text=[f"🔥 {v}g" for v in cmp_fat_vals],
-                textposition="auto",
-            )
-        )
-        fig_cmp.add_trace(
-            go.Scatter(
-                x=cmp_labels,
-                y=cmp_tss_vals,
-                name="⚡ 훈련 스트레스 (TSS)",
-                mode="lines+markers+text",
-                text=[f"{v} TSS" for v in cmp_tss_vals],
-                textposition="top center",
-                line=dict(color="#f97316", width=2, dash="dot"),
-                marker=dict(size=9, color="#f97316"),
-            )
-        )
-        fig_cmp.update_layout(
-            title="코스별 지방 연소량(g) vs 훈련 부하(TSS) 비교",
-            yaxis_title="그램(g) / TSS",
-            height=300,
-            template="plotly_dark",
-            margin=dict(l=15, r=15, t=35, b=15),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        )
-        st.plotly_chart(fig_cmp, use_container_width=True)
-
-    with col_cmp_tbl:
-        st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True, height=300)
-
-    # 3) Step-by-Step Power Profile & Table for the Selected Workout
-    wo_steps = selected_wo["steps"]
+    # 2) Selected Workout Power Profile Chart & Compact Step Table
     step_rows = []
     bar_x = []
     bar_y = []
@@ -871,14 +856,13 @@ with tab3:
         dur_m = round(stp["duration_sec"] / 60.0, 1)
         mid_w = round((stp["low_w"] + stp["high_w"]) / 2.0)
         step_rows.append({
-            "순서": f"Step {idx_s}",
-            "구간명": stp["name"],
-            "지속 시간(분)": f"{dur_m}분",
-            "목표 파워(W)": f"{stp['low_w']}W ~ {stp['high_w']}W",
-            "평균 타겟": f"{mid_w}W ({round(mid_w / ftp_input * 100)}% FTP)",
-            "심박/코칭 가이드": stp.get("hr_guide", "-"),
+            "구간": f"{idx_s}. {stp['name']}",
+            "시간": f"{dur_m:g}분",
+            "목표 파워": f"{stp['low_w']}~{stp['high_w']}W",
+            "평균": f"{mid_w}W ({round(mid_w / ftp_input * 100)}%)",
+            "심박/가이드": stp.get("hr_guide", "-").split("(")[0].strip(),
         })
-        bar_x.append(f"{idx_s}. {stp['name']} ({dur_m}m)")
+        bar_x.append(f"{idx_s}.{stp['name']}({dur_m:g}m)")
         bar_y.append(mid_w)
         if stp["intensity"] in ("warmup", "cooldown", "rest", 1, 2, 3):
             bar_colors.append("#38bdf8")
@@ -890,7 +874,7 @@ with tab3:
             bar_colors.append("#22c55e")
         bar_texts.append(f"{stp['low_w']}~{stp['high_w']}W")
 
-    col_wo_chart, col_wo_table = st.columns([3, 2])
+    col_wo_chart, col_wo_table = st.columns([1.25, 1])
     with col_wo_chart:
         fig_wo = go.Figure(
             go.Bar(
@@ -904,46 +888,86 @@ with tab3:
         )
         fig_wo.add_hline(y=ftp_input, line_dash="dash", line_color="#f43f5e", annotation_text=f"FTP {ftp_input}W")
         fig_wo.update_layout(
-            title=f"선택된 워크아웃 구간별 파워 프로파일 ({wo_short})",
-            xaxis_title="구간 (Step)",
-            yaxis_title="목표 파워 (Watts)",
-            height=300,
+            title=f"선택 코스 구간별 파워 프로파일 ({wo_short})",
+            yaxis_title="파워 (W)",
+            height=270,
             template="plotly_dark",
-            margin=dict(l=20, r=20, t=35, b=20),
+            margin=dict(l=15, r=15, t=32, b=15),
         )
         st.plotly_chart(fig_wo, use_container_width=True)
 
     with col_wo_table:
-        st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=300)
+        st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=270)
 
-    fit_bytes = build_garmin_workout_fit_bytes(workout_name=wo_short, steps=wo_steps)
-    zwo_xml = build_zwift_zwo_xml(
-        workout_name=wo_short,
-        description=wo_desc,
-        ftp=ftp_input,
-        steps=wo_steps,
-    )
+    # 3) Compact 5-Course Side-by-Side Comparison (Chart + Concise Table)
+    cmp_rows = []
+    cmp_labels = []
+    cmp_fat_vals = []
+    cmp_tss_vals = []
+    cmp_fat_colors = []
+    cmp_line_widths = []
 
-    dl_col1, dl_col2 = st.columns(2)
-    with dl_col1:
-        st.download_button(
-            "📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드",
-            data=fit_bytes,
-            file_name=f"{wo_short}_FTP{ftp_input}W.fit",
-            mime="application/octet-stream",
-            type="primary",
-            use_container_width=True,
+    for title_k, w_item in presets.items():
+        is_sel = (title_k == selected_title)
+        short_lbl = w_item.get("short_label", w_item["short_name"])
+        cmp_labels.append(f"⭐{short_lbl}" if is_sel else short_lbl)
+        cmp_fat_vals.append(w_item["est_fat_g"])
+        cmp_tss_vals.append(w_item["est_tss"])
+        cmp_fat_colors.append("#22c55e" if is_sel else "#334155")
+        cmp_line_widths.append(3 if is_sel else 0)
+
+        stars_only = w_item["ftp_gain_score"].split(" ")[0]
+        safety_short = w_item["joint_bp_safety"].replace("회복 ", "")
+        cmp_rows.append({
+            "순위": f"{'👉 ' if is_sel else ''}{w_item.get('rank_badge', '')}",
+            "훈련 코스": f"{'⭐ ' if is_sel else ''}{short_lbl}",
+            "시간/부하": f"{w_item['duration_min']}분 / {w_item['est_tss']}TSS",
+            "🔥지방(비중)": f"{w_item['est_fat_g']}g ({w_item['est_fat_pct']}%)",
+            "⚡열량/탄수": f"{w_item['est_kcal']}kcal / {w_item['est_carb_g']:g}g",
+            "📉내일 TSB": f"{w_item['next_tsb']:+.1f} ({w_item['tsb_delta']:+.1f})",
+            "🚀효과(TE)": f"TE {w_item['aerobic_te']} · {stars_only}",
+            "🦵부담(회복)": safety_short,
+        })
+
+    col_cmp_chart, col_cmp_tbl = st.columns([1, 1.45])
+    with col_cmp_chart:
+        fig_cmp = go.Figure()
+        fig_cmp.add_trace(
+            go.Bar(
+                x=cmp_labels,
+                y=cmp_fat_vals,
+                name="🔥 지방 연소(g)",
+                marker=dict(
+                    color=cmp_fat_colors,
+                    line=dict(color="#facc15", width=cmp_line_widths),
+                ),
+                text=[f"{v}g" for v in cmp_fat_vals],
+                textposition="auto",
+            )
         )
-        st.caption("📌 **가민 1040 넣는 법**: Edge 1040을 PC에 USB로 연결 → `Garmin\\NewFiles` 폴더에 다운로드한 `.fit` 파일을 복사 후 연결 해제하면 **훈련 > 워크아웃**에 즉시 생성됩니다!")
-    with dl_col2:
-        st.download_button(
-            "📥 Zwift / Intervals.icu 워크아웃 (.zwo) 다운로드",
-            data=zwo_xml.encode("utf-8"),
-            file_name=f"{wo_short}_FTP{ftp_input}W.zwo",
-            mime="application/xml",
-            use_container_width=True,
+        fig_cmp.add_trace(
+            go.Scatter(
+                x=cmp_labels,
+                y=cmp_tss_vals,
+                name="⚡ 부하(TSS)",
+                mode="lines+markers+text",
+                text=[f"{v}" for v in cmp_tss_vals],
+                textposition="top center",
+                line=dict(color="#f97316", width=2, dash="dot"),
+                marker=dict(size=8, color="#f97316"),
+            )
         )
-        st.caption("📌 **Zwift / Intervals.icu 넣는 법**: `Documents\\Zwift\\Workouts` 폴더에 넣거나 Intervals.icu 워크아웃 빌더에 업로드하면 가민 커넥트 달력과 무선 동기화할 수도 있습니다.")
+        fig_cmp.update_layout(
+            title="5대 코스 지방연소(g) vs 부하(TSS) 비교",
+            height=255,
+            template="plotly_dark",
+            margin=dict(l=15, r=15, t=32, b=15),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_cmp, use_container_width=True)
+
+    with col_cmp_tbl:
+        st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True, height=255)
 
     st.divider()
 

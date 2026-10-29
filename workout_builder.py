@@ -321,11 +321,11 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
         {"name": "10m BP Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.42), "high_w": round(ftp * 0.50), "intensity": 3, "cadence": 85, "hr_guide": "< 115 bpm (이완기 혈압 안정 마무리)"},
     ]
 
-    t1 = f"🔥 FatMax 90분 서지(Surge) 코스 ({round(ftp*0.65)}~{round(ftp*0.70)}W 크루징 + 20분마다 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회)"
-    t2 = f"🔥 FatMax 60분 정석 인도어 코스 ({round(ftp*0.64)}~{round(ftp*0.70)}W 평일 체지방 감량 & 유산소 효율 극대화)"
-    t3 = f"⚡ SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운 ({round(ftp*0.88)}~{round(ftp*0.94)}W + 알닥톤 복용 맞춤 10분 Z1 쿨다운)"
-    t4 = f"🚀 Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운 ({round(ftp*0.96)}~{round(ftp*1.04)}W + 10분 Z1 쿨다운)"
-    t5 = f"🌿 Z1 액티브 리커버리 & 혈압안정 45분 회복 코스 ({round(ftp*0.48)}~{round(ftp*0.55)}W 피로 해소 & 오금·혈압 케어)"
+    t1 = f"🔥 FatMax 90분 서지 ({round(ftp*0.65)}~{round(ftp*0.70)}W + 20초 서지 3회)"
+    t2 = f"🔥 FatMax 60분 정석 ({round(ftp*0.64)}~{round(ftp*0.70)}W 평일 체지방 감량)"
+    t3 = f"⚡ SST 스윗스팟 3x12분 ({round(ftp*0.88)}~{round(ftp*0.94)}W + 10분 Z1 쿨다운)"
+    t4 = f"🚀 Z4 역치 4x8분 ({round(ftp*0.96)}~{round(ftp*1.04)}W FTP 210W 돌파)"
+    t5 = f"🌿 Z1 액티브 리커버리 45분 ({round(ftp*0.48)}~{round(ftp*0.55)}W 회복·혈압케어)"
 
     presets_raw = {
         t1: {
@@ -341,12 +341,12 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "est_fat_pct": 58,
             "est_carb_g": 88.0,
             "est_kcal": round((ftp * 0.67 * 5400 / 1000.0) * 1.04),
-            "aerobic_te": "3.5 (유산소·지방대사 대폭 향상)",
-            "anaerobic_te": "1.4 (20초 서지 신경근 자극)",
-            "ftp_gain_score": "★★★☆☆ (베이스·EF 극대화)",
-            "joint_bp_safety": "🟢 낮음 (권장 회복 ~18시간 / 10분 혈압안정 쿨다운)",
-            "summary": f"FatMax 스위트스팟({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm)으로 20분씩 순항하면서 20분마다 딱 20초간 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지(가속)를 3회 넣어 지루함을 없애고 지방분해 호르몬 분비 및 페달링 효율(EF)을 동시에 끌어올립니다. (예상 지방연소 ~54.5g)",
-            "description": f"FatMax 스위트스팟({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm)으로 20분씩 순항하면서 20분마다 딱 20초간 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지(가속)를 3회 넣어 지루함을 없애고 지방분해 호르몬 분비 및 페달링 효율(EF)을 동시에 끌어올립니다. (예상 지방연소 ~54.5g)",
+            "aerobic_te": "3.5",
+            "anaerobic_te": "1.4",
+            "ftp_gain_score": "★★★☆☆ (지방대사·EF)",
+            "joint_bp_safety": "🟢 낮음 (회복 18h)",
+            "summary": f"FatMax({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm) 20분 순항 + 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회로 지방분해 호르몬과 유산소 효율(EF)을 극대화합니다.",
+            "description": f"FatMax({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm) 20분 순항 + 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회로 지방분해 호르몬과 유산소 효율(EF)을 극대화합니다.",
             "steps": fm90_steps,
         },
         t2: {
@@ -362,17 +362,17 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "est_fat_pct": 61,
             "est_carb_g": 52.0,
             "est_kcal": round((ftp * 0.65 * 3600 / 1000.0) * 1.04),
-            "aerobic_te": "2.9 (유산소 지방대사 유지·강화)",
-            "anaerobic_te": "0.2 (무산소 피로 없음)",
-            "ftp_gain_score": "★★☆☆☆ (유산소 효율 EF 개선)",
-            "joint_bp_safety": "🟢 매우 안전 (권장 회복 ~12시간 / 매일 수행 가능)",
-            "summary": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm 미만 캡) 이하로 유지하며 {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실과 피로 누적 없이 순수 체지방만 태우는 정석 코스입니다. (예상 지방연소 ~36.2g)",
-            "description": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm 미만 캡) 이하로 유지하며 {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실과 피로 누적 없이 순수 체지방만 태우는 정석 코스입니다. (예상 지방연소 ~36.2g)",
+            "aerobic_te": "2.9",
+            "anaerobic_te": "0.2",
+            "ftp_gain_score": "★★☆☆☆ (체지방 감량)",
+            "joint_bp_safety": "🟢 안전 (회복 12h)",
+            "summary": f"평일 60분간 심박수 {round(max_hr*0.75)}bpm(138bpm 캡) 이하, {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실·피로 누적 없이 순수 체지방만 태웁니다.",
+            "description": f"평일 60분간 심박수 {round(max_hr*0.75)}bpm(138bpm 캡) 이하, {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실·피로 누적 없이 순수 체지방만 태웁니다.",
             "steps": fm60_steps,
         },
         t3: {
             "id": "sst_210",
-            "short_label": "⚡ SST 스윗스팟 3x12분",
+            "short_label": "⚡ SST 3x12분",
             "base_title": t3,
             "title": t3,
             "fit_name": "SST_3x12m",
@@ -383,12 +383,12 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "est_fat_pct": 34,
             "est_carb_g": 107.0,
             "est_kcal": round((ftp * 0.78 * 3840 / 1000.0) * 1.04),
-            "aerobic_te": "3.8 (젖산역치 및 유산소 파워 향상)",
-            "anaerobic_te": "0.8 (역치 하단 자극)",
-            "ftp_gain_score": "★★★★☆ (FTP 210W 돌파 핵심)",
-            "joint_bp_safety": "🟡 보통 (권장 회복 ~24시간 / 케이던스 88~90rpm 유지)",
-            "summary": f"FTP 196W → 210W 달성을 위한 핵심 스윗스팟 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 구간을 12분씩 3세트 소화하고, 알닥톤 복용 중 운동 후 이완기 혈압 반등을 예방하는 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
-            "description": f"FTP 196W → 210W 달성을 위한 핵심 스윗스팟 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 구간을 12분씩 3세트 소화하고, 알닥톤 복용 중 운동 후 이완기 혈압 반등을 예방하는 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
+            "aerobic_te": "3.8",
+            "anaerobic_te": "0.8",
+            "ftp_gain_score": "★★★★☆ (FTP 핵심)",
+            "joint_bp_safety": "🟡 보통 (회복 24h)",
+            "summary": f"FTP 210W 달성 주력 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 12분×3세트 후 알닥톤 맞춤 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
+            "description": f"FTP 210W 달성 주력 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 12분×3세트 후 알닥톤 맞춤 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
             "steps": sst_steps,
         },
         t4: {
@@ -404,12 +404,12 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "est_fat_pct": 25,
             "est_carb_g": 126.0,
             "est_kcal": round((ftp * 0.81 * 3840 / 1000.0) * 1.04),
-            "aerobic_te": "4.2 (FTP 및 젖산 제거 한계 돌파)",
-            "anaerobic_te": "1.6 (고강도 역치 자극)",
-            "ftp_gain_score": "★★★★★ (FTP 210W 직접 돌파 1위)",
-            "joint_bp_safety": "🟠 주의 (권장 회복 ~36시간 / 전해질 600ml+ 필수)",
-            "summary": f"실측 LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다.",
-            "description": f"실측 LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다.",
+            "aerobic_te": "4.2",
+            "anaerobic_te": "1.6",
+            "ftp_gain_score": "★★★★★ (FTP 돌파 1위)",
+            "joint_bp_safety": "🟠 주의 (회복 36h)",
+            "summary": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분×4세트 + 10분 Z1 쿨다운입니다.",
+            "description": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분×4세트 + 10분 Z1 쿨다운입니다.",
             "steps": z4_steps,
         },
         t5: {
@@ -425,12 +425,12 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "est_fat_pct": 66,
             "est_carb_g": 25.0,
             "est_kcal": round((ftp * 0.50 * 2700 / 1000.0) * 1.04),
-            "aerobic_te": "1.8 (젖산 제거 및 모세혈관 회복)",
-            "anaerobic_te": "0.0 (관절·신경계 휴식)",
-            "ftp_gain_score": "★☆☆☆☆ (초과회복 유도)",
-            "joint_bp_safety": "🟢 최상 (오금 이완 & 이완기 혈압 안정화 특화)",
-            "summary": f"연속 주행 피로 누적일이나 고강도 훈련 다음 날, 좌측 오금 부담을 덜고 하체 모세혈관 혈류를 촉진하여 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
-            "description": f"연속 주행 피로 누적일이나 고강도 훈련 다음 날, 좌측 오금 부담을 덜고 하체 모세혈관 혈류를 촉진하여 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
+            "aerobic_te": "1.8",
+            "anaerobic_te": "0.0",
+            "ftp_gain_score": "★☆☆☆☆ (초과회복)",
+            "joint_bp_safety": "🟢 최상 (오금·혈압이완)",
+            "summary": f"피로 누적일 좌측 오금 부담을 덜고 하체 혈류를 촉진해 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
+            "description": f"피로 누적일 좌측 오금 부담을 덜고 하체 혈류를 촉진해 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
             "steps": rec_steps,
         },
     }
@@ -485,43 +485,28 @@ def get_ranked_preset_workouts(
     # Determine ranking order by physiological state
     if tsb < -12 or consec_days >= 4 or (atl - ctl) > 15:
         order = ["z1_recovery", "fatmax_60", "fatmax_90_surge", "sst_210", "z4_threshold"]
-        reason = (
-            f"현재 피로도(ATL `{atl:.1f}`) 누적 또는 연속 주행(`{consec_days}일`) 영향으로 컨디션(`TSB {tsb:+.1f}`) 관리가 최우선입니다. "
-            f"**🌿 Z1 액티브 리커버리** 또는 **🔥 FatMax 60분**을 1·2순위로 배치했습니다."
-        )
+        reason = f"피로 누적(ATL `{atl:.1f}`) 관리가 필요하여 **🌿 Z1 회복 45분** 및 **🔥 FatMax 60분**을 1·2순위로 배치했습니다."
     elif recent_hard_tss >= 75 and tsb < 8:
         order = ["fatmax_60", "fatmax_90_surge", "z1_recovery", "sst_210", "z4_threshold"]
-        reason = (
-            f"직전 라이딩 부하(`{recent_hard_tss:.0f} TSS`)가 높았으므로 오늘은 관절·신경계 회복과 체지방 연소를 겸하는 "
-            f"**🔥 FatMax 60분 정석 코스**를 추천 1순위로 자동 배치했습니다."
-        )
+        reason = f"직전 고강도 주행(`{recent_hard_tss:.0f} TSS`) 회복 및 체지방 연소를 위해 **🔥 FatMax 60분 정석**을 1순위로 배치했습니다."
     elif tsb >= 8:
         order = ["sst_210", "fatmax_90_surge", "z4_threshold", "fatmax_60", "z1_recovery"]
-        reason = (
-            f"컨디션 폼(`TSB {tsb:+.1f}`)이 매우 상쾌한 골든타임입니다! FTP 210W 돌파 자극을 주는 **⚡ SST 스윗스팟 3x12분**과 "
-            f"지방연소·서지를 결합한 **🔥 FatMax 90분 서지 코스**를 1·2순위로 자동 배치했습니다."
-        )
+        reason = f"컨디션(`TSB {tsb:+.1f}`) 최상! FTP 210W 돌파용 **⚡ SST 3x12분**과 **🔥 FatMax 90분 서지**를 1·2순위로 배치했습니다."
     elif tsb >= 0:
         order = ["fatmax_90_surge", "sst_210", "fatmax_60", "z4_threshold", "z1_recovery"]
-        reason = (
-            f"체력(`CTL {ctl:.1f}`)과 피로도(`ATL {atl:.1f}`)가 이상적인 균형(`TSB {tsb:+.1f}`) 상태입니다. "
-            f"체지방 감량과 유산소 엔진을 동시에 극대화하는 **🔥 FatMax 90분 서지 코스**를 1순위로 자동 배치했습니다."
-        )
+        reason = f"체력·피로도 균형(`TSB {tsb:+.1f}`) 상태! 지방연소·엔진을 동시에 키우는 **🔥 FatMax 90분 서지**를 1순위로 배치했습니다."
     else:
         order = ["fatmax_60", "fatmax_90_surge", "sst_210", "z1_recovery", "z4_threshold"]
-        reason = (
-            f"현재 효과적인 훈련 부하 구간(`TSB {tsb:+.1f}`)이므로 피로 과누적 없이 지방 대사율을 높이는 "
-            f"**🔥 FatMax 60분 / 90분 코스**를 1·2순위로 자동 배치했습니다."
-        )
+        reason = f"훈련 빌드업 구간(`TSB {tsb:+.1f}`)이므로 피로 과누적 없이 지방을 태우는 **🔥 FatMax 60분/90분**을 1·2순위로 배치했습니다."
 
-    medals = ["🥇 [추천 1순위]", "🥈 [추천 2순위]", "🥉 [추천 3순위]", "4순위:", "5순위:"]
+    medals = ["🥇 1순위", "🥈 2순위", "🥉 3순위", "4순위", "5순위"]
     ranked_dict = {}
     alpha_ctl = 2.0 / (42.0 + 1.0)
     alpha_atl = 2.0 / (7.0 + 1.0)
 
     for rank_idx, wid in enumerate(order):
         item = dict(by_id[wid])
-        labeled_title = f"{medals[rank_idx]} {item['base_title']}"
+        labeled_title = f"{medals[rank_idx]} | {item['base_title']}"
         item["title"] = labeled_title
         item["rank"] = rank_idx + 1
         item["rank_badge"] = medals[rank_idx]

@@ -23,6 +23,15 @@ from config import (
     DEFAULT_LTHR,
     DEFAULT_REST_HR,
 )
+import importlib
+import garmin_loader as _gl_mod
+import power_metrics as _pm_mod
+import workout_builder as _wb_mod
+
+importlib.reload(_gl_mod)
+importlib.reload(_pm_mod)
+importlib.reload(_wb_mod)
+
 from strava_client import StravaClient, estimate_ftp_from_live_activities
 from garmin_loader import (
     load_garmin_raw_activities,

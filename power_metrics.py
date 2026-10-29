@@ -118,21 +118,27 @@ def calculate_tss(moving_time_sec: int, np_watts: float, ftp: float) -> float:
 
 
 def estimate_substrate_burn(
-    moving_time_sec: float, avg_watts: float, np_watts: float, ftp: float
-) -> Dict[str, float]:
+    moving_time_sec: float = 0.0,
+    avg_watts: float = 0.0,
+    np_watts: float = 0.0,
+    ftp: float = 196.0,
+    duration_seconds: Optional[float] = None,
+    intensity_factor: Optional[float] = None,
+) -> Dict[str, Any]:
     """
     Estimates total calories (kcal), Fat oxidized (g), and Carbohydrates oxidized (g)
     based on mechanical work (kJ ≈ kcal at ~23.9% human gross efficiency) and Intensity Factor (IF).
     """
-    if moving_time_sec <= 0 or (avg_watts <= 0 and np_watts <= 0):
+    dur_s = float(duration_seconds if duration_seconds is not None else moving_time_sec)
+    if dur_s <= 0 or (avg_watts <= 0 and np_watts <= 0):
         return {"kcal": 0, "fat_g": 0.0, "carb_g": 0.0, "fat_pct": 0}
 
     base_w = avg_watts if avg_watts > 0 else np_watts * 0.92
     eff_np = np_watts if np_watts > 0 else base_w
-    if_val = eff_np / max(100.0, ftp)
+    if_val = float(intensity_factor) if (intensity_factor is not None and intensity_factor > 0) else (eff_np / max(100.0, ftp))
 
     # Mechanical kJ = Watts * sec / 1000. Human metabolic kcal ≈ kJ * 1.04
-    kcal = (base_w * moving_time_sec / 1000.0) * 1.04
+    kcal = (base_w * dur_s / 1000.0) * 1.04
 
     # Fat oxidation energy share vs IF (peaks in Z1/FatMax ~55-68%, drops sharply near FTP)
     if if_val <= 0.60:
@@ -240,9 +246,11 @@ def calculate_pmc(daily_tss_series: pd.Series) -> pd.DataFrame:
     return df.round(1)
 
 
-def project_pmc_future(pmc_df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
+def project_pmc_future(
+    pmc_df: pd.DataFrame, days: int = 7, planned_daily_tss: float = 0.0
+) -> pd.DataFrame:
     """
-    Projects CTL, ATL, and TSB for the next `days` days assuming rest (0 TSS/day),
+    Projects CTL, ATL, and TSB for the next `days` days assuming `planned_daily_tss` (default 0 TSS/day),
     helping the rider plan tapering or recovery.
     """
     if pmc_df.empty:
@@ -251,10 +259,10 @@ def project_pmc_future(pmc_df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
     future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days, freq="D")
     combined_tss = pd.concat([
         pmc_df["tss"],
-        pd.Series(0.0, index=future_dates),
+        pd.Series(float(planned_daily_tss), index=future_dates),
     ])
     full_pmc = calculate_pmc(combined_tss)
-    return full_pmc.iloc[-(days + 1):]
+    return full_pmc.iloc[-days:]
 
 
 def interpret_tsb(tsb: float) -> Dict[str, str]:

@@ -714,6 +714,18 @@ with tab3:
         f"현재 설정된 **FTP `{ftp_input}W`**, **LTHR `{lthr_input}bpm`**, **최대심박 `{max_hr_input}bpm`**에 맞춰 와트(W) 타겟이 자동 계산된 실전 워크아웃 파일을 즉시 다운로드할 수 있습니다."
     )
 
+    st.success(
+        f"**📋 탑재된 4대 실전 맞춤형 워크아웃 요약 (가민 순정 바이너리 `.fit` 즉시 다운로드)**\n"
+        f"- 🔥 **1. FatMax 90분 서지(Surge) 코스**: `{round(ftp_input*0.65)}~{round(ftp_input*0.70)}W` 크루징 + 20분마다 20초 `{round(ftp_input*1.17)}~{round(ftp_input*1.33)}W` 서지 3회 (지루함 방지 & 지방분해 호르몬 자극)\n"
+        f"- 🔥 **2. FatMax 60분 정석 인도어 코스**: `{round(ftp_input*0.64)}~{round(ftp_input*0.70)}W` 평일 체지방 감량 & 유산소 효율(EF) 극대화 (심박 138bpm 미만 캡)\n"
+        f"- ⚡ **3. SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운**: `{round(ftp_input*0.88)}~{round(ftp_input*0.94)}W` + 알닥톤 복용 맞춤 10분 Z1 쿨다운\n"
+        f"- 🚀 **4. Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운**: `{round(ftp_input*0.96)}~{round(ftp_input*1.04)}W` + 10분 Z1 혈압안정 쿨다운\n\n"
+        f"**📲 가민 Edge 1040에 넣는 법 (1분 완료)**:\n"
+        f"1. 아래에서 원하는 코스를 선택하고 **`📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드`** 버튼을 누릅니다.\n"
+        f"2. 가민 Edge 1040을 USB 케이블로 PC에 연결한 뒤 **`Garmin\\NewFiles`** 폴더 안에 다운로드한 `.fit` 파일을 복사해 넣습니다.\n"
+        f"3. USB 연결을 해제하고 Edge 1040 전원을 켜면 **[훈련(Training) > 워크아웃(Workouts)]** 메뉴에 즉시 생성되어 주행 중 목표 와트 범위와 20초 서지 알람을 자동으로 띄워줍니다!"
+    )
+
     presets = get_preset_workouts(ftp=ftp_input, lthr=lthr_input, max_hr=max_hr_input)
     preset_titles = list(presets.keys())
     selected_title = st.selectbox("🎯 다운로드할 맞춤 워크아웃 선택", preset_titles, index=0)
@@ -721,7 +733,7 @@ with tab3:
     wo_desc = selected_wo.get("description") or selected_wo.get("summary", "")
     wo_short = selected_wo.get("short_name") or selected_wo.get("fit_name", "Garmin_Workout")
 
-    st.info(f"💡 **코치 설계 의도**: {wo_desc}")
+    st.info(f"💡 **선택한 코스 코치 설계 의도**: {wo_desc}")
 
     wo_steps = selected_wo["steps"]
     step_rows = []
@@ -738,6 +750,7 @@ with tab3:
             "지속 시간(분)": f"{dur_m}분",
             "목표 파워(W)": f"{stp['low_w']}W ~ {stp['high_w']}W",
             "평균 타겟": f"{mid_w}W ({round(mid_w / ftp_input * 100)}% FTP)",
+            "심박/코칭 가이드": stp.get("hr_guide", "-"),
         })
         bar_x.append(f"{idx_s}. {stp['name']} ({dur_m}m)")
         bar_y.append(mid_w)

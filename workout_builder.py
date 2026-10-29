@@ -212,60 +212,69 @@ def build_zwift_zwo_xml(workout_name: str, description: str, ftp: float, steps: 
 def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[str, Dict[str, Any]]:
     """
     Returns tailored preset workouts for the athlete (FTP 196W, LTHR 161bpm, MaxHR 184bpm).
-    Includes FatMax 60m, FatMax 90m Surge, SST 210W Breakthrough, and Z4 Threshold.
+    Includes FatMax 90m Surge, FatMax 60m Standard, SST 3x12m, and Z4 4x8m Threshold.
     """
-    # 1. FatMax 60m Standard
-    fm60_steps = [
-        {"name": "Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.65), "intensity": 2, "cadence": 85, "hr_guide": f"~{round(max_hr*0.65)} bpm"},
-        {"name": "FatMax Core 1", "duration_sec": 1200, "low_w": round(ftp * 0.64), "high_w": round(ftp * 0.68), "intensity": 0, "cadence": 90, "hr_guide": f"{round(max_hr*0.66)}~{round(max_hr*0.72)} bpm"},
-        {"name": "FatMax Peak", "duration_sec": 1500, "low_w": round(ftp * 0.68), "high_w": round(ftp * 0.72), "intensity": 0, "cadence": 90, "hr_guide": f"{round(max_hr*0.70)}~{round(max_hr*0.75)} bpm (<138bpm)"},
-        {"name": "Z1 Cooldown", "duration_sec": 300, "low_w": round(ftp * 0.45), "high_w": round(ftp * 0.55), "intensity": 3, "cadence": 85, "hr_guide": "< 115 bpm"},
-    ]
-
-    # 2. FatMax 90m Surge (5 x [14m30s @ 65% + 30s @ 85%])
+    # 1. FatMax 90m Surge (10m Warmup + 3 x [20m @ 128~137W + 20s Surge @ 230~260W] + 9m FatMax + 10m Z1 Cooldown = 90m)
     fm90_steps = [
-        {"name": "Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.65), "intensity": 2, "cadence": 85, "hr_guide": f"~{round(max_hr*0.65)} bpm"},
+        {"name": "10m Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.62), "intensity": 2, "cadence": 85, "hr_guide": f"~{round(max_hr*0.65)} bpm"},
     ]
-    for i in range(1, 6):
+    for i in range(1, 4):
         fm90_steps.append({
-            "name": f"FatMax Z2 #{i}",
-            "duration_sec": 870,  # 14m 30s
-            "low_w": round(ftp * 0.63),
-            "high_w": round(ftp * 0.67),
+            "name": f"FatMax 20m #{i}",
+            "duration_sec": 1200,  # 20m @ 65~70% FTP (128~137W)
+            "low_w": round(ftp * 0.65),
+            "high_w": round(ftp * 0.70),
             "intensity": 0,
             "cadence": 90,
-            "hr_guide": f"{round(max_hr*0.65)}~{round(max_hr*0.74)} bpm",
+            "hr_guide": f"{round(max_hr*0.65)}~{round(max_hr*0.75)} bpm (<138bpm)",
         })
         fm90_steps.append({
-            "name": f"30s Surge #{i}",
-            "duration_sec": 30,   # 30s at 85% FTP
-            "low_w": round(ftp * 0.83),
-            "high_w": round(ftp * 0.87),
+            "name": f"20s Surge #{i}",
+            "duration_sec": 20,    # 20s @ 117~133% FTP (230~260W)
+            "low_w": round(ftp * 1.17),
+            "high_w": round(ftp * 1.33),
             "intensity": 0,
             "cadence": 95,
-            "hr_guide": "카테콜아민 분비 자극 (무산소 역치 미만)",
+            "hr_guide": "20초 신경근 자극 (무산소 젖산 축적 전 종료)",
         })
     fm90_steps.append({
-        "name": "Z1 Cooldown", "duration_sec": 300, "low_w": round(ftp * 0.45), "high_w": round(ftp * 0.55), "intensity": 3, "cadence": 85, "hr_guide": "< 115 bpm"
+        "name": "FatMax Finish",
+        "duration_sec": 540,       # 9m @ 65~70% FTP (128~137W)
+        "low_w": round(ftp * 0.65),
+        "high_w": round(ftp * 0.70),
+        "intensity": 0,
+        "cadence": 90,
+        "hr_guide": f"{round(max_hr*0.65)}~{round(max_hr*0.75)} bpm (<138bpm)",
+    })
+    fm90_steps.append({
+        "name": "10m Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.56), "intensity": 3, "cadence": 85, "hr_guide": "혈압안정 쿨다운 (<125 bpm)"
     })
 
-    # 3. Sweet Spot (SST 3 x 12m + 10m Z1 Cooldown for BP stability)
+    # 2. FatMax 60m Standard (10m Warmup + 40m FatMax 125~138W + 10m Z1 Cooldown)
+    fm60_steps = [
+        {"name": "10m Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.62), "intensity": 2, "cadence": 85, "hr_guide": f"~{round(max_hr*0.65)} bpm"},
+        {"name": "FatMax 20m #1", "duration_sec": 1200, "low_w": round(ftp * 0.64), "high_w": round(ftp * 0.68), "intensity": 0, "cadence": 90, "hr_guide": f"{round(max_hr*0.65)}~{round(max_hr*0.72)} bpm"},
+        {"name": "FatMax 20m #2", "duration_sec": 1200, "low_w": round(ftp * 0.66), "high_w": round(ftp * 0.70), "intensity": 0, "cadence": 90, "hr_guide": f"{round(max_hr*0.68)}~{round(max_hr*0.75)} bpm (<138bpm)"},
+        {"name": "10m Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.56), "intensity": 3, "cadence": 85, "hr_guide": "혈압안정 쿨다운 (<125 bpm)"},
+    ]
+
+    # 3. Sweet Spot (SST 3 x 12m @ 172~184W + 10m Z1 Cooldown for BP stability)
     sst_steps = [
-        {"name": "Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.70), "intensity": 2, "cadence": 88, "hr_guide": "~130 bpm"},
+        {"name": "10m Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.70), "intensity": 2, "cadence": 88, "hr_guide": "~130 bpm"},
     ]
     for i in range(1, 4):
         sst_steps.append({
-            "name": f"SST #{i} (90%)",
-            "duration_sec": 720,  # 12m
+            "name": f"SST 12m #{i}",
+            "duration_sec": 720,  # 12m @ 88~94% FTP (172~184W)
             "low_w": round(ftp * 0.88),
-            "high_w": round(ftp * 0.93),
+            "high_w": round(ftp * 0.94),
             "intensity": 0,
             "cadence": 90,
-            "hr_guide": f"{round(lthr*0.91)}~{round(lthr*0.97)} bpm ({round(lthr*0.91)}~{round(lthr*0.97)}bpm)",
+            "hr_guide": f"{round(lthr*0.91)}~{round(lthr*0.97)} bpm",
         })
         if i < 3:
             sst_steps.append({
-                "name": f"Recovery #{i}",
+                "name": f"Z1 Rest 4m #{i}",
                 "duration_sec": 240,  # 4m
                 "low_w": round(ftp * 0.50),
                 "high_w": round(ftp * 0.55),
@@ -274,26 +283,26 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
                 "hr_guide": "< 125 bpm",
             })
     sst_steps.append({
-        "name": "BP Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.55), "intensity": 3, "cadence": 85, "hr_guide": "10분 혈압안정 쿨다운 (<115 bpm)"
+        "name": "10m Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.56), "intensity": 3, "cadence": 85, "hr_guide": "알닥톤 맞춤 10분 혈압안정 쿨다운 (<125 bpm)"
     })
 
-    # 4. Z4 Threshold Cruise (4 x 8m @ 96~100% FTP + 10m Z1 Cooldown)
+    # 4. Z4 Threshold Cruise (4 x 8m @ 188~204W + 10m Z1 Cooldown)
     z4_steps = [
-        {"name": "Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.72), "intensity": 2, "cadence": 90, "hr_guide": "~132 bpm"},
+        {"name": "10m Warmup", "duration_sec": 600, "low_w": round(ftp * 0.50), "high_w": round(ftp * 0.72), "intensity": 2, "cadence": 90, "hr_guide": "~132 bpm"},
     ]
     for i in range(1, 5):
         z4_steps.append({
-            "name": f"Z4 FTP #{i}",
-            "duration_sec": 480,  # 8m
+            "name": f"Z4 8m #{i}",
+            "duration_sec": 480,  # 8m @ 96~104% FTP (188~204W)
             "low_w": round(ftp * 0.96),
-            "high_w": round(ftp * 1.01),
+            "high_w": round(ftp * 1.04),
             "intensity": 0,
             "cadence": 92,
             "hr_guide": f"{round(lthr*0.96)}~{lthr+2} bpm",
         })
         if i < 4:
             z4_steps.append({
-                "name": f"Rest #{i}",
+                "name": f"Z1 Rest 4m #{i}",
                 "duration_sec": 240,  # 4m
                 "low_w": round(ftp * 0.50),
                 "high_w": round(ftp * 0.55),
@@ -302,56 +311,61 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
                 "hr_guide": "< 125 bpm",
             })
     z4_steps.append({
-        "name": "BP Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.55), "intensity": 3, "cadence": 85, "hr_guide": "10분 혈압안정 쿨다운 (<115 bpm)"
+        "name": "10m Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.56), "intensity": 3, "cadence": 85, "hr_guide": "알닥톤 맞춤 10분 혈압안정 쿨다운 (<125 bpm)"
     })
 
+    t1 = f"🔥 1. FatMax 90분 서지(Surge) 코스 ({round(ftp*0.65)}~{round(ftp*0.70)}W 크루징 + 20분마다 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회)"
+    t2 = f"🔥 2. FatMax 60분 정석 인도어 코스 ({round(ftp*0.64)}~{round(ftp*0.70)}W 평일 체지방 감량 & 유산소 효율 극대화)"
+    t3 = f"⚡ 3. SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운 ({round(ftp*0.88)}~{round(ftp*0.94)}W + 알닥톤 복용 맞춤 10분 Z1 쿨다운)"
+    t4 = f"🚀 4. Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운 ({round(ftp*0.96)}~{round(ftp*1.04)}W + 10분 Z1 쿨다운)"
+
     return {
-        "🔥 [추천 1순위] FatMax 90분 서지(Surge) 지방연소 극대화 코스": {
+        t1: {
             "id": "fatmax_90_surge",
-            "title": "🔥 [추천 1순위] FatMax 90분 서지(Surge) 지방연소 극대화 코스",
+            "title": t1,
             "fit_name": "FatMax_90m_Surge",
             "short_name": "FatMax_90m_Surge",
             "duration_min": 90,
             "est_tss": 69,
             "est_fat_g": 54,
-            "summary": f"14분 30초 FatMax({round(ftp*0.65)}W) 순항 후 30초 중강도 서지({round(ftp*0.85)}W)를 5회 반복하여 지루함을 없애고 카테콜아민(지방분해 호르몬) 분비와 후연소 효과를 극대화합니다. (예상 지방연소 ~54g, 69 TSS)",
-            "description": f"14분 30초 FatMax({round(ftp*0.65)}W) 순항 후 30초 중강도 서지({round(ftp*0.85)}W)를 5회 반복하여 지루함을 없애고 카테콜아민(지방분해 호르몬) 분비와 후연소 효과를 극대화합니다. (예상 지방연소 ~54g, 69 TSS)",
+            "summary": f"FatMax 스위트스팟({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm)으로 20분씩 순항하면서 20분마다 딱 20초간 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지(가속)를 3회 넣어 지루함을 없애고 지방분해 호르몬 분비 및 페달링 효율(EF)을 동시에 끌어올립니다. (예상 지방연소 ~54g)",
+            "description": f"FatMax 스위트스팟({round(ftp*0.65)}~{round(ftp*0.70)}W, 심박 120~137bpm)으로 20분씩 순항하면서 20분마다 딱 20초간 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지(가속)를 3회 넣어 지루함을 없애고 지방분해 호르몬 분비 및 페달링 효율(EF)을 동시에 끌어올립니다. (예상 지방연소 ~54g)",
             "steps": fm90_steps,
         },
-        "🔥 [평일 60분] FatMax 정석 유산소 지방연소 코스": {
+        t2: {
             "id": "fatmax_60",
-            "title": "🔥 [평일 60분] FatMax 정석 유산소 지방연소 코스",
+            "title": t2,
             "fit_name": "FatMax_60m",
             "short_name": "FatMax_60m",
             "duration_min": 60,
             "est_tss": 44,
             "est_fat_g": 36,
-            "summary": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm) 이하로 유지하며 {round(ftp*0.66)}W → {round(ftp*0.70)}W 구간에서 순수 체지방 연소율을 최고조로 유지합니다. (예상 지방연소 ~36g, 44 TSS)",
-            "description": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm) 이하로 유지하며 {round(ftp*0.66)}W → {round(ftp*0.70)}W 구간에서 순수 체지방 연소율을 최고조로 유지합니다. (예상 지방연소 ~36g, 44 TSS)",
+            "summary": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm 미만 캡) 이하로 유지하며 {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실과 피로 누적 없이 순수 체지방만 태우는 정석 코스입니다. (예상 지방연소 ~36g)",
+            "description": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm 미만 캡) 이하로 유지하며 {round(ftp*0.64)}~{round(ftp*0.70)}W 구간에서 근손실과 피로 누적 없이 순수 체지방만 태우는 정석 코스입니다. (예상 지방연소 ~36g)",
             "steps": fm60_steps,
         },
-        "⚡ [FTP 210W 돌파] 스윗스팟 (SST 3x12분 + 10분 혈압안정 쿨다운)": {
+        t3: {
             "id": "sst_210",
-            "title": "⚡ [FTP 210W 돌파] 스윗스팟 (SST 3x12분 + 10분 혈압안정 쿨다운)",
+            "title": t3,
             "fit_name": "SST_3x12m",
             "short_name": "SST_3x12m",
             "duration_min": 64,
             "est_tss": 66,
             "est_fat_g": 24,
-            "summary": f"FTP 196W → 210W 달성을 위한 핵심 훈련! {round(ftp*0.88)}~{round(ftp*0.93)}W 구간을 12분씩 3세트 소화하고, 운동 후 이완기 혈압 반등을 막는 10분 Z1 쿨다운으로 마무리합니다. (66 TSS)",
-            "description": f"FTP 196W → 210W 달성을 위한 핵심 훈련! {round(ftp*0.88)}~{round(ftp*0.93)}W 구간을 12분씩 3세트 소화하고, 운동 후 이완기 혈압 반등을 막는 10분 Z1 쿨다운으로 마무리합니다. (66 TSS)",
+            "summary": f"FTP 196W → 210W 달성을 위한 핵심 스윗스팟 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 구간을 12분씩 3세트 소화하고, 알닥톤 복용 중 운동 후 이완기 혈압 반등을 예방하는 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
+            "description": f"FTP 196W → 210W 달성을 위한 핵심 스윗스팟 훈련! {round(ftp*0.88)}~{round(ftp*0.94)}W 구간을 12분씩 3세트 소화하고, 알닥톤 복용 중 운동 후 이완기 혈압 반등을 예방하는 10분 Z1 혈압안정 쿨다운(심박 125bpm 이하)으로 마무리합니다.",
             "steps": sst_steps,
         },
-        "🚀 [역치 강화] Z4 크루즈 인터벌 (4x8분 + 10분 혈압안정 쿨다운)": {
+        t4: {
             "id": "z4_threshold",
-            "title": "🚀 [역치 강화] Z4 크루즈 인터벌 (4x8분 + 10분 혈압안정 쿨다운)",
+            "title": t4,
             "fit_name": "Z4_4x8m",
             "short_name": "Z4_4x8m",
             "duration_min": 64,
             "est_tss": 74,
             "est_fat_g": 19,
-            "summary": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력을 극대화하는 {round(ftp*0.96)}~{round(ftp*1.01)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다. (74 TSS)",
-            "description": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력을 극대화하는 {round(ftp*0.96)}~{round(ftp*1.01)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다. (74 TSS)",
+            "summary": f"실측 LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다.",
+            "description": f"실측 LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다.",
             "steps": z4_steps,
         },
     }

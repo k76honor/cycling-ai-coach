@@ -718,8 +718,10 @@ with tab3:
     preset_titles = list(presets.keys())
     selected_title = st.selectbox("🎯 다운로드할 맞춤 워크아웃 선택", preset_titles, index=0)
     selected_wo = presets[selected_title]
+    wo_desc = selected_wo.get("description") or selected_wo.get("summary", "")
+    wo_short = selected_wo.get("short_name") or selected_wo.get("fit_name", "Garmin_Workout")
 
-    st.info(f"💡 **코치 설계 의도**: {selected_wo['description']}")
+    st.info(f"💡 **코치 설계 의도**: {wo_desc}")
 
     wo_steps = selected_wo["steps"]
     step_rows = []
@@ -739,7 +741,7 @@ with tab3:
         })
         bar_x.append(f"{idx_s}. {stp['name']} ({dur_m}m)")
         bar_y.append(mid_w)
-        if stp["intensity"] in ("warmup", "cooldown", "rest"):
+        if stp["intensity"] in ("warmup", "cooldown", "rest", 1, 2, 3):
             bar_colors.append("#38bdf8")
         elif mid_w >= ftp_input * 0.94:
             bar_colors.append("#ef4444")
@@ -763,7 +765,7 @@ with tab3:
         )
         fig_wo.add_hline(y=ftp_input, line_dash="dash", line_color="#f43f5e", annotation_text=f"FTP {ftp_input}W")
         fig_wo.update_layout(
-            title=f"워크아웃 구간별 목표 파워 프로파일 ({selected_wo['short_name']})",
+            title=f"워크아웃 구간별 목표 파워 프로파일 ({wo_short})",
             xaxis_title="구간 (Step)",
             yaxis_title="목표 파워 (Watts)",
             height=320,
@@ -775,10 +777,10 @@ with tab3:
     with col_wo_table:
         st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=320)
 
-    fit_bytes = build_garmin_workout_fit_bytes(workout_name=selected_wo["short_name"], steps=wo_steps)
+    fit_bytes = build_garmin_workout_fit_bytes(workout_name=wo_short, steps=wo_steps)
     zwo_xml = build_zwift_zwo_xml(
-        workout_name=selected_wo["short_name"],
-        description=selected_wo["description"],
+        workout_name=wo_short,
+        description=wo_desc,
         ftp=ftp_input,
         steps=wo_steps,
     )
@@ -788,7 +790,7 @@ with tab3:
         st.download_button(
             "📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드",
             data=fit_bytes,
-            file_name=f"{selected_wo['short_name']}_FTP{ftp_input}W.fit",
+            file_name=f"{wo_short}_FTP{ftp_input}W.fit",
             mime="application/octet-stream",
             type="primary",
             use_container_width=True,
@@ -798,7 +800,7 @@ with tab3:
         st.download_button(
             "📥 Zwift / Intervals.icu 워크아웃 (.zwo) 다운로드",
             data=zwo_xml.encode("utf-8"),
-            file_name=f"{selected_wo['short_name']}_FTP{ftp_input}W.zwo",
+            file_name=f"{wo_short}_FTP{ftp_input}W.zwo",
             mime="application/xml",
             use_container_width=True,
         )

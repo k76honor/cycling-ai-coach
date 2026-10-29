@@ -306,44 +306,52 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
     })
 
     return {
-        "fatmax_90_surge": {
+        "🔥 [추천 1순위] FatMax 90분 서지(Surge) 지방연소 극대화 코스": {
             "id": "fatmax_90_surge",
             "title": "🔥 [추천 1순위] FatMax 90분 서지(Surge) 지방연소 극대화 코스",
-            "fit_name": f"FatMax_90m_Surge_{int(ftp)}W",
+            "fit_name": "FatMax_90m_Surge",
+            "short_name": "FatMax_90m_Surge",
             "duration_min": 90,
             "est_tss": 69,
             "est_fat_g": 54,
-            "summary": f"14분 30초 FatMax({round(ftp*0.65)}W) 순항 후 30초 중강도 서지({round(ftp*0.85)}W)를 5회 반복하여 지루함을 없애고 카테콜아민(지방분해 호르몬) 분비와 후연소 효과를 극대화합니다.",
+            "summary": f"14분 30초 FatMax({round(ftp*0.65)}W) 순항 후 30초 중강도 서지({round(ftp*0.85)}W)를 5회 반복하여 지루함을 없애고 카테콜아민(지방분해 호르몬) 분비와 후연소 효과를 극대화합니다. (예상 지방연소 ~54g, 69 TSS)",
+            "description": f"14분 30초 FatMax({round(ftp*0.65)}W) 순항 후 30초 중강도 서지({round(ftp*0.85)}W)를 5회 반복하여 지루함을 없애고 카테콜아민(지방분해 호르몬) 분비와 후연소 효과를 극대화합니다. (예상 지방연소 ~54g, 69 TSS)",
             "steps": fm90_steps,
         },
-        "fatmax_60": {
+        "🔥 [평일 60분] FatMax 정석 유산소 지방연소 코스": {
             "id": "fatmax_60",
             "title": "🔥 [평일 60분] FatMax 정석 유산소 지방연소 코스",
-            "fit_name": f"FatMax_60m_{int(ftp)}W",
+            "fit_name": "FatMax_60m",
+            "short_name": "FatMax_60m",
             "duration_min": 60,
             "est_tss": 44,
             "est_fat_g": 36,
-            "summary": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm) 이하로 유지하며 {round(ftp*0.66)}W → {round(ftp*0.70)}W 구간에서 순수 체지방 연소율을 최고조로 유지합니다.",
+            "summary": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm) 이하로 유지하며 {round(ftp*0.66)}W → {round(ftp*0.70)}W 구간에서 순수 체지방 연소율을 최고조로 유지합니다. (예상 지방연소 ~36g, 44 TSS)",
+            "description": f"평일 퇴근 후 60분 동안 심박수를 {round(max_hr*0.75)}bpm(138bpm) 이하로 유지하며 {round(ftp*0.66)}W → {round(ftp*0.70)}W 구간에서 순수 체지방 연소율을 최고조로 유지합니다. (예상 지방연소 ~36g, 44 TSS)",
             "steps": fm60_steps,
         },
-        "sst_210": {
+        "⚡ [FTP 210W 돌파] 스윗스팟 (SST 3x12분 + 10분 혈압안정 쿨다운)": {
             "id": "sst_210",
             "title": "⚡ [FTP 210W 돌파] 스윗스팟 (SST 3x12분 + 10분 혈압안정 쿨다운)",
-            "fit_name": f"SST_3x12m_{int(ftp)}W",
+            "fit_name": "SST_3x12m",
+            "short_name": "SST_3x12m",
             "duration_min": 64,
             "est_tss": 66,
             "est_fat_g": 24,
-            "summary": f"FTP 196W → 210W 달성을 위한 핵심 훈련! {round(ftp*0.88)}~{round(ftp*0.93)}W 구간을 12분씩 3세트 소화하고, 운동 후 이완기 혈압 반등을 막는 10분 Z1 쿨다운으로 마무리합니다.",
+            "summary": f"FTP 196W → 210W 달성을 위한 핵심 훈련! {round(ftp*0.88)}~{round(ftp*0.93)}W 구간을 12분씩 3세트 소화하고, 운동 후 이완기 혈압 반등을 막는 10분 Z1 쿨다운으로 마무리합니다. (66 TSS)",
+            "description": f"FTP 196W → 210W 달성을 위한 핵심 훈련! {round(ftp*0.88)}~{round(ftp*0.93)}W 구간을 12분씩 3세트 소화하고, 운동 후 이완기 혈압 반등을 막는 10분 Z1 쿨다운으로 마무리합니다. (66 TSS)",
             "steps": sst_steps,
         },
-        "z4_threshold": {
+        "🚀 [역치 강화] Z4 크루즈 인터벌 (4x8분 + 10분 혈압안정 쿨다운)": {
             "id": "z4_threshold",
             "title": "🚀 [역치 강화] Z4 크루즈 인터벌 (4x8분 + 10분 혈압안정 쿨다운)",
-            "fit_name": f"Z4_4x8m_{int(ftp)}W",
+            "fit_name": "Z4_4x8m",
+            "short_name": "Z4_4x8m",
             "duration_min": 64,
             "est_tss": 74,
             "est_fat_g": 19,
-            "summary": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력을 극대화하는 {round(ftp*0.96)}~{round(ftp*1.01)}W 8분 인터벌 4세트입니다.",
+            "summary": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력을 극대화하는 {round(ftp*0.96)}~{round(ftp*1.01)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다. (74 TSS)",
+            "description": f"LTHR({lthr}bpm) 부근에서 젖산 제거 능력을 극대화하는 {round(ftp*0.96)}~{round(ftp*1.01)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다. (74 TSS)",
             "steps": z4_steps,
         },
     }

@@ -47,6 +47,7 @@ from power_metrics import (
 )
 from workout_builder import (
     get_preset_workouts,
+    get_ranked_preset_workouts,
     build_garmin_workout_fit_bytes,
     build_zwift_zwo_xml,
 )
@@ -709,26 +710,40 @@ with tab2:
 
 # ----------------- TAB 3: TRAINING PLAN GENERATOR & WORKOUT FILE EXPORTER -----------------
 with tab3:
-    st.subheader("⚡ 원클릭 가민 Edge 1040 (`.fit`) & Zwift/Intervals.icu (`.zwo`) 워크아웃 파일 생성기")
-    st.markdown(
-        f"현재 설정된 **FTP `{ftp_input}W`**, **LTHR `{lthr_input}bpm`**, **최대심박 `{max_hr_input}bpm`**에 맞춰 와트(W) 타겟이 자동 계산된 실전 워크아웃 파일을 즉시 다운로드할 수 있습니다."
-    )
+    col_wo_hdr, col_wo_help = st.columns([3, 1])
+    with col_wo_hdr:
+        st.subheader("⚡ 원클릭 가민 Edge 1040 (`.fit`) & Zwift (`.zwo`) 워크아웃 생성기")
+    with col_wo_help:
+        with st.popover("❓ 코스 상세 안내 & 가민 1040 넣는 법", use_container_width=True):
+            st.markdown(
+                f"### 📋 5대 실전 맞춤형 워크아웃 요약 (FTP `{ftp_input}W` 기준)\n"
+                f"- 🔥 **FatMax 90분 서지(Surge) 코스**: `{round(ftp_input*0.65)}~{round(ftp_input*0.70)}W` 크루징 + 20분마다 20초 `{round(ftp_input*1.17)}~{round(ftp_input*1.33)}W` 서지 3회 (지루함 방지 & 지방분해 호르몬 자극)\n"
+                f"- 🔥 **FatMax 60분 정석 인도어 코스**: `{round(ftp_input*0.64)}~{round(ftp_input*0.70)}W` 평일 체지방 감량 & 유산소 효율(EF) 극대화 (심박 138bpm 미만 캡)\n"
+                f"- ⚡ **SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운**: `{round(ftp_input*0.88)}~{round(ftp_input*0.94)}W` + 알닥톤 복용 맞춤 10분 Z1 쿨다운\n"
+                f"- 🚀 **Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운**: `{round(ftp_input*0.96)}~{round(ftp_input*1.04)}W` + 10분 Z1 혈압안정 쿨다운\n"
+                f"- 🌿 **Z1 액티브 리커버리 45분 회복 코스**: `{round(ftp_input*0.48)}~{round(ftp_input*0.55)}W` 피로 누적일 하체 혈류 촉진 및 오금·혈압 안정\n\n"
+                f"---\n"
+                f"### 📲 가민 Edge 1040에 넣는 법 (1분 완료)\n"
+                f"1. 원하는 코스를 선택하고 **`📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드`** 버튼을 누릅니다.\n"
+                f"2. 가민 Edge 1040을 USB 케이블로 PC에 연결한 뒤 **`Garmin\\NewFiles`** 폴더 안에 다운로드한 `.fit` 파일을 복사해 넣습니다.\n"
+                f"3. USB 연결을 해제하고 Edge 1040 전원을 켜면 **[훈련(Training) > 워크아웃(Workouts)]** 메뉴에 즉시 생성되어 주행 중 목표 와트 범위와 20초 서지 알람을 자동으로 띄워줍니다!"
+            )
 
-    st.success(
-        f"**📋 탑재된 4대 실전 맞춤형 워크아웃 요약 (가민 순정 바이너리 `.fit` 즉시 다운로드)**\n"
-        f"- 🔥 **1. FatMax 90분 서지(Surge) 코스**: `{round(ftp_input*0.65)}~{round(ftp_input*0.70)}W` 크루징 + 20분마다 20초 `{round(ftp_input*1.17)}~{round(ftp_input*1.33)}W` 서지 3회 (지루함 방지 & 지방분해 호르몬 자극)\n"
-        f"- 🔥 **2. FatMax 60분 정석 인도어 코스**: `{round(ftp_input*0.64)}~{round(ftp_input*0.70)}W` 평일 체지방 감량 & 유산소 효율(EF) 극대화 (심박 138bpm 미만 캡)\n"
-        f"- ⚡ **3. SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운**: `{round(ftp_input*0.88)}~{round(ftp_input*0.94)}W` + 알닥톤 복용 맞춤 10분 Z1 쿨다운\n"
-        f"- 🚀 **4. Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운**: `{round(ftp_input*0.96)}~{round(ftp_input*1.04)}W` + 10분 Z1 혈압안정 쿨다운\n\n"
-        f"**📲 가민 Edge 1040에 넣는 법 (1분 완료)**:\n"
-        f"1. 아래에서 원하는 코스를 선택하고 **`📥 가민 Edge 1040 전용 워크아웃 (.fit) 다운로드`** 버튼을 누릅니다.\n"
-        f"2. 가민 Edge 1040을 USB 케이블로 PC에 연결한 뒤 **`Garmin\\NewFiles`** 폴더 안에 다운로드한 `.fit` 파일을 복사해 넣습니다.\n"
-        f"3. USB 연결을 해제하고 Edge 1040 전원을 켜면 **[훈련(Training) > 워크아웃(Workouts)]** 메뉴에 즉시 생성되어 주행 중 목표 와트 범위와 20초 서지 알람을 자동으로 띄워줍니다!"
+    ranked_data = get_ranked_preset_workouts(
+        ftp=ftp_input,
+        lthr=lthr_input,
+        max_hr=max_hr_input,
+        tsb=latest_pmc["tsb"],
+        ctl=latest_pmc["ctl"],
+        atl=latest_pmc["atl"],
+        recent_activities=activities,
     )
-
-    presets = get_preset_workouts(ftp=ftp_input, lthr=lthr_input, max_hr=max_hr_input)
+    presets = ranked_data["workouts"]
     preset_titles = list(presets.keys())
-    selected_title = st.selectbox("🎯 다운로드할 맞춤 워크아웃 선택", preset_titles, index=0)
+
+    st.caption(f"🤖 **실시간 몸 상태 맞춤 추천 순위 자동 정렬됨**: {ranked_data['reason']}")
+
+    selected_title = st.selectbox("🎯 오늘 컨디션 맞춤 워크아웃 선택 (1순위 자동 선택)", preset_titles, index=0)
     selected_wo = presets[selected_title]
     wo_desc = selected_wo.get("description") or selected_wo.get("summary", "")
     wo_short = selected_wo.get("short_name") or selected_wo.get("fit_name", "Garmin_Workout")

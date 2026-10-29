@@ -314,14 +314,23 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
         "name": "10m Z1 Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.56), "intensity": 3, "cadence": 85, "hr_guide": "알닥톤 맞춤 10분 혈압안정 쿨다운 (<125 bpm)"
     })
 
-    t1 = f"🔥 1. FatMax 90분 서지(Surge) 코스 ({round(ftp*0.65)}~{round(ftp*0.70)}W 크루징 + 20분마다 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회)"
-    t2 = f"🔥 2. FatMax 60분 정석 인도어 코스 ({round(ftp*0.64)}~{round(ftp*0.70)}W 평일 체지방 감량 & 유산소 효율 극대화)"
-    t3 = f"⚡ 3. SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운 ({round(ftp*0.88)}~{round(ftp*0.94)}W + 알닥톤 복용 맞춤 10분 Z1 쿨다운)"
-    t4 = f"🚀 4. Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운 ({round(ftp*0.96)}~{round(ftp*1.04)}W + 10분 Z1 쿨다운)"
+    # 5. Z1 Active Recovery & BP Stability 45m (for fatigued / consecutive ride days)
+    rec_steps = [
+        {"name": "10m Easy Spin", "duration_sec": 600, "low_w": round(ftp * 0.45), "high_w": round(ftp * 0.52), "intensity": 2, "cadence": 85, "hr_guide": "< 115 bpm (가벼운 관절 이완)"},
+        {"name": "25m Z1 Recovery", "duration_sec": 1500, "low_w": round(ftp * 0.48), "high_w": round(ftp * 0.55), "intensity": 0, "cadence": 88, "hr_guide": "110~122 bpm (젖산 제거 및 하체 혈류 촉진)"},
+        {"name": "10m BP Cooldown", "duration_sec": 600, "low_w": round(ftp * 0.42), "high_w": round(ftp * 0.50), "intensity": 3, "cadence": 85, "hr_guide": "< 115 bpm (이완기 혈압 안정 마무리)"},
+    ]
+
+    t1 = f"🔥 FatMax 90분 서지(Surge) 코스 ({round(ftp*0.65)}~{round(ftp*0.70)}W 크루징 + 20분마다 20초 {round(ftp*1.17)}~{round(ftp*1.33)}W 서지 3회)"
+    t2 = f"🔥 FatMax 60분 정석 인도어 코스 ({round(ftp*0.64)}~{round(ftp*0.70)}W 평일 체지방 감량 & 유산소 효율 극대화)"
+    t3 = f"⚡ SST 스윗스팟 3x12분 + 10분 혈압안정 쿨다운 ({round(ftp*0.88)}~{round(ftp*0.94)}W + 알닥톤 복용 맞춤 10분 Z1 쿨다운)"
+    t4 = f"🚀 Z4 역치 4x8분 (FTP 210W 돌파) + 10분 쿨다운 ({round(ftp*0.96)}~{round(ftp*1.04)}W + 10분 Z1 쿨다운)"
+    t5 = f"🌿 Z1 액티브 리커버리 & 혈압안정 45분 회복 코스 ({round(ftp*0.48)}~{round(ftp*0.55)}W 피로 해소 & 오금·혈압 케어)"
 
     return {
         t1: {
             "id": "fatmax_90_surge",
+            "base_title": t1,
             "title": t1,
             "fit_name": "FatMax_90m_Surge",
             "short_name": "FatMax_90m_Surge",
@@ -334,6 +343,7 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
         },
         t2: {
             "id": "fatmax_60",
+            "base_title": t2,
             "title": t2,
             "fit_name": "FatMax_60m",
             "short_name": "FatMax_60m",
@@ -346,6 +356,7 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
         },
         t3: {
             "id": "sst_210",
+            "base_title": t3,
             "title": t3,
             "fit_name": "SST_3x12m",
             "short_name": "SST_3x12m",
@@ -358,6 +369,7 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
         },
         t4: {
             "id": "z4_threshold",
+            "base_title": t4,
             "title": t4,
             "fit_name": "Z4_4x8m",
             "short_name": "Z4_4x8m",
@@ -368,4 +380,104 @@ def get_preset_workouts(ftp: float, lthr: int = 161, max_hr: int = 184) -> Dict[
             "description": f"실측 LTHR({lthr}bpm) 부근에서 젖산 제거 능력과 FTP(210W 돌파)를 직접 끌어올리는 {round(ftp*0.96)}~{round(ftp*1.04)}W 8분 인터벌 4세트 + 10분 Z1 혈압안정 쿨다운입니다.",
             "steps": z4_steps,
         },
+        t5: {
+            "id": "z1_recovery",
+            "base_title": t5,
+            "title": t5,
+            "fit_name": "Z1_Recovery_45m",
+            "short_name": "Z1_Recovery_45m",
+            "duration_min": 45,
+            "est_tss": 21,
+            "est_fat_g": 22,
+            "summary": f"연속 주행 피로 누적일이나 고강도 훈련 다음 날, 좌측 오금 부담을 덜고 하체 모세혈관 혈류를 촉진하여 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
+            "description": f"연속 주행 피로 누적일이나 고강도 훈련 다음 날, 좌측 오금 부담을 덜고 하체 모세혈관 혈류를 촉진하여 피로도(ATL)와 이완기 혈압을 안정시키는 {round(ftp*0.48)}~{round(ftp*0.55)}W 45분 회복 코스입니다.",
+            "steps": rec_steps,
+        },
+    }
+
+
+def get_ranked_preset_workouts(
+    ftp: float,
+    lthr: int = 161,
+    max_hr: int = 184,
+    tsb: float = 0.0,
+    ctl: float = 0.0,
+    atl: float = 0.0,
+    recent_activities: List[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Dynamically ranks the 5 preset workouts (1st to 5th) based on the athlete's real-time
+    physiological state (TSB, ATL, CTL, recent hard rides, and consecutive riding days).
+    """
+    raw_presets = get_preset_workouts(ftp=ftp, lthr=lthr, max_hr=max_hr)
+    by_id = {v["id"]: v for v in raw_presets.values()}
+
+    # Analyze recent 3 days of rides if available
+    recent_hard_tss = 0.0
+    consec_days = 0
+    if recent_activities:
+        ride_dates = sorted({a.get("start_date_local", "")[:10] for a in recent_activities if a.get("start_date_local")}, reverse=True)
+        if ride_dates:
+            latest_act = recent_activities[0]
+            recent_hard_tss = float(latest_act.get("tss") or 0.0)
+            # Check consecutive days from latest ride backwards
+            try:
+                d0 = datetime.strptime(ride_dates[0], "%Y-%m-%d").date()
+                today_d = datetime.now(timezone.utc).astimezone().date()
+                if (today_d - d0).days <= 1:
+                    consec_days = 1
+                    for idx_d in range(1, len(ride_dates)):
+                        prev_d = datetime.strptime(ride_dates[idx_d], "%Y-%m-%d").date()
+                        if (d0 - prev_d).days == 1:
+                            consec_days += 1
+                            d0 = prev_d
+                        else:
+                            break
+            except Exception:
+                pass
+
+    # Determine ranking order by physiological state
+    if tsb < -12 or consec_days >= 4 or (atl - ctl) > 15:
+        order = ["z1_recovery", "fatmax_60", "fatmax_90_surge", "sst_210", "z4_threshold"]
+        reason = (
+            f"현재 피로도(ATL `{atl:.1f}`) 누적 또는 연속 주행(`{consec_days}일`) 영향으로 컨디션(`TSB {tsb:+.1f}`) 관리가 최우선입니다. "
+            f"**🌿 Z1 액티브 리커버리** 또는 **🔥 FatMax 60분**을 1·2순위로 배치했습니다."
+        )
+    elif recent_hard_tss >= 75 and tsb < 8:
+        order = ["fatmax_60", "fatmax_90_surge", "z1_recovery", "sst_210", "z4_threshold"]
+        reason = (
+            f"직전 라이딩 부하(`{recent_hard_tss:.0f} TSS`)가 높았으므로 오늘은 관절·신경계 회복과 체지방 연소를 겸하는 "
+            f"**🔥 FatMax 60분 정석 코스**를 추천 1순위로 자동 배치했습니다."
+        )
+    elif tsb >= 8:
+        order = ["sst_210", "fatmax_90_surge", "z4_threshold", "fatmax_60", "z1_recovery"]
+        reason = (
+            f"컨디션 폼(`TSB {tsb:+.1f}`)이 매우 상쾌한 골든타임입니다! FTP 210W 돌파 자극을 주는 **⚡ SST 스윗스팟 3x12분**과 "
+            f"지방연소·서지를 결합한 **🔥 FatMax 90분 서지 코스**를 1·2순위로 자동 배치했습니다."
+        )
+    elif tsb >= 0:
+        order = ["fatmax_90_surge", "sst_210", "fatmax_60", "z4_threshold", "z1_recovery"]
+        reason = (
+            f"체력(`CTL {ctl:.1f}`)과 피로도(`ATL {atl:.1f}`)가 이상적인 균형(`TSB {tsb:+.1f}`) 상태입니다. "
+            f"체지방 감량과 유산소 엔진을 동시에 극대화하는 **🔥 FatMax 90분 서지 코스**를 1순위로 자동 배치했습니다."
+        )
+    else:
+        order = ["fatmax_60", "fatmax_90_surge", "sst_210", "z1_recovery", "z4_threshold"]
+        reason = (
+            f"현재 효과적인 훈련 부하 구간(`TSB {tsb:+.1f}`)이므로 피로 과누적 없이 지방 대사율을 높이는 "
+            f"**🔥 FatMax 60분 / 90분 코스**를 1·2순위로 자동 배치했습니다."
+        )
+
+    medals = ["🥇 [추천 1순위]", "🥈 [추천 2순위]", "🥉 [추천 3순위]", "4순위:", "5순위:"]
+    ranked_dict = {}
+    for rank_idx, wid in enumerate(order):
+        item = dict(by_id[wid])
+        labeled_title = f"{medals[rank_idx]} {item['base_title']}"
+        item["title"] = labeled_title
+        item["rank"] = rank_idx + 1
+        ranked_dict[labeled_title] = item
+
+    return {
+        "workouts": ranked_dict,
+        "reason": reason,
     }

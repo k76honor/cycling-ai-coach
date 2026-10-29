@@ -748,8 +748,119 @@ with tab3:
     wo_desc = selected_wo.get("description") or selected_wo.get("summary", "")
     wo_short = selected_wo.get("short_name") or selected_wo.get("fit_name", "Garmin_Workout")
 
+    # 1) 5 KPI Metric Cards for Selected Workout Expected Effects (with comparison vs 5-course average)
+    avg_fat_all = np.mean([w["est_fat_g"] for w in presets.values()])
+    fat_diff = round(selected_wo["est_fat_g"] - avg_fat_all, 1)
+
+    eff_c1, eff_c2, eff_c3, eff_c4, eff_c5 = st.columns(5)
+    with eff_c1:
+        st.metric(
+            "🔥 예상 지방 연소량",
+            f"{selected_wo['est_fat_g']} g",
+            f"지방비중 {selected_wo['est_fat_pct']}% (평균대비 {fat_diff:+.1f}g)",
+        )
+    with eff_c2:
+        st.metric(
+            "⚡ 소모 열량 / 탄수화물",
+            f"{selected_wo['est_kcal']} kcal",
+            f"🍚 탄수화물 {selected_wo['est_carb_g']}g 소모",
+            delta_color="off",
+        )
+    with eff_c3:
+        st.metric(
+            "📉 주행 후 내일 예상 TSB",
+            f"{selected_wo['next_tsb']:+.1f}",
+            f"오늘대비 {selected_wo['tsb_delta']:+.1f} (CTL {selected_wo['ctl_delta']:+.1f} / ATL {selected_wo['atl_delta']:+.1f})",
+            delta_color="normal" if selected_wo["next_tsb"] >= -10 else "inverse",
+        )
+    with eff_c4:
+        st.metric(
+            "🚀 가민 예상 유산소 TE",
+            f"TE {selected_wo['aerobic_te'].split(' ')[0]}",
+            selected_wo["ftp_gain_score"],
+            delta_color="off",
+        )
+    with eff_c5:
+        st.metric(
+            "🦵 오금 부담 / 부하",
+            f"{selected_wo['duration_min']}분 ({selected_wo['est_tss']} TSS)",
+            selected_wo["joint_bp_safety"].split("(")[0].strip(),
+            delta_color="off",
+        )
+
     st.info(f"💡 **선택한 코스 코치 설계 의도**: {wo_desc}")
 
+    # 2) Side-by-side Comparison of All 5 Workouts (Chart + Table highlighting selected workout)
+    st.markdown("##### 📊 5대 훈련 프로그램 예상 효과 한눈에 비교 (현재 선택된 코스 ⭐ 강조)")
+    cmp_rows = []
+    cmp_labels = []
+    cmp_fat_vals = []
+    cmp_tss_vals = []
+    cmp_fat_colors = []
+    cmp_line_widths = []
+
+    for title_k, w_item in presets.items():
+        is_sel = (title_k == selected_title)
+        marker_prefix = "👉 ⭐ " if is_sel else ""
+        short_lbl = w_item.get("short_label", w_item["short_name"])
+        cmp_labels.append(f"⭐ {short_lbl}\n(현재 선택)" if is_sel else short_lbl)
+        cmp_fat_vals.append(w_item["est_fat_g"])
+        cmp_tss_vals.append(w_item["est_tss"])
+        cmp_fat_colors.append("#22c55e" if is_sel else "#334155")
+        cmp_line_widths.append(3 if is_sel else 0)
+
+        cmp_rows.append({
+            "구분 / 추천순위": f"{marker_prefix}{w_item.get('rank_badge', '')}",
+            "훈련 코스명": f"{'⭐ ' if is_sel else ''}{short_lbl} ({w_item['duration_min']}분)",
+            "🔥 지방연소 (비중)": f"{w_item['est_fat_g']} g ({w_item['est_fat_pct']}%)",
+            "⚡ 열량 / 🍚 탄수": f"{w_item['est_kcal']} kcal / {w_item['est_carb_g']}g",
+            "📉 내일 예상 TSB (CTL/ATL)": f"{w_item['next_tsb']:+.1f} (CTL {w_item['next_ctl']:.1f} / ATL {w_item['next_atl']:.1f})",
+            "🚀 유산소 TE & FTP 기여도": f"TE {w_item['aerobic_te'].split(' ')[0]} | {w_item['ftp_gain_score']}",
+            "🦵 오금·혈압 안전도 (회복)": w_item["joint_bp_safety"],
+        })
+
+    col_cmp_chart, col_cmp_tbl = st.columns([2, 3])
+    with col_cmp_chart:
+        fig_cmp = go.Figure()
+        fig_cmp.add_trace(
+            go.Bar(
+                x=cmp_labels,
+                y=cmp_fat_vals,
+                name="🔥 예상 지방 연소량 (g)",
+                marker=dict(
+                    color=cmp_fat_colors,
+                    line=dict(color="#facc15", width=cmp_line_widths),
+                ),
+                text=[f"🔥 {v}g" for v in cmp_fat_vals],
+                textposition="auto",
+            )
+        )
+        fig_cmp.add_trace(
+            go.Scatter(
+                x=cmp_labels,
+                y=cmp_tss_vals,
+                name="⚡ 훈련 스트레스 (TSS)",
+                mode="lines+markers+text",
+                text=[f"{v} TSS" for v in cmp_tss_vals],
+                textposition="top center",
+                line=dict(color="#f97316", width=2, dash="dot"),
+                marker=dict(size=9, color="#f97316"),
+            )
+        )
+        fig_cmp.update_layout(
+            title="코스별 지방 연소량(g) vs 훈련 부하(TSS) 비교",
+            yaxis_title="그램(g) / TSS",
+            height=300,
+            template="plotly_dark",
+            margin=dict(l=15, r=15, t=35, b=15),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_cmp, use_container_width=True)
+
+    with col_cmp_tbl:
+        st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True, height=300)
+
+    # 3) Step-by-Step Power Profile & Table for the Selected Workout
     wo_steps = selected_wo["steps"]
     step_rows = []
     bar_x = []
@@ -793,17 +904,17 @@ with tab3:
         )
         fig_wo.add_hline(y=ftp_input, line_dash="dash", line_color="#f43f5e", annotation_text=f"FTP {ftp_input}W")
         fig_wo.update_layout(
-            title=f"워크아웃 구간별 목표 파워 프로파일 ({wo_short})",
+            title=f"선택된 워크아웃 구간별 파워 프로파일 ({wo_short})",
             xaxis_title="구간 (Step)",
             yaxis_title="목표 파워 (Watts)",
-            height=320,
+            height=300,
             template="plotly_dark",
-            margin=dict(l=20, r=20, t=40, b=20),
+            margin=dict(l=20, r=20, t=35, b=20),
         )
         st.plotly_chart(fig_wo, use_container_width=True)
 
     with col_wo_table:
-        st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=320)
+        st.dataframe(pd.DataFrame(step_rows), use_container_width=True, hide_index=True, height=300)
 
     fit_bytes = build_garmin_workout_fit_bytes(workout_name=wo_short, steps=wo_steps)
     zwo_xml = build_zwift_zwo_xml(
